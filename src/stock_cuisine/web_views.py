@@ -10,7 +10,13 @@ import html
 from typing import List, Optional
 
 from .application import AlertBatch, ProductStock, StockApplication
-from .formatting import format_date, format_price, format_quantity, movement_label
+from .formatting import (
+    format_date,
+    format_price,
+    format_quantity,
+    movement_label,
+    sort_text,
+)
 from .models import Batch, Product, cents_to_euros
 from .repository import Repository
 from .services import batch_value_cents
@@ -353,10 +359,34 @@ def _batch_rows(
         ]
     if not batches:
         return '<p class="empty">Aucun lot correspondant.</p>'
+    batches = sorted(
+        batches,
+        key=lambda batch: (
+            sort_text(products.get(batch.product_id).category)
+            if products.get(batch.product_id) is not None
+            else "",
+            sort_text(products.get(batch.product_id).name)
+            if products.get(batch.product_id) is not None
+            else "",
+            batch.expiry_date or date.max,
+            batch.purchase_date,
+            batch.id or 0,
+        ),
+    )
     rows = []
+    last_category = None
     for batch in batches:
         product = products.get(batch.product_id)
         product_name = "?" if product is None else product.name
+        category = "Sans catégorie" if product is None else product.category
+        category_key = sort_text(category)
+        if category_key != last_category:
+            rows.append(
+                '<tr class="category-row">'
+                f'<th colspan="8">{_escape(category)}</th>'
+                "</tr>"
+            )
+            last_category = category_key
         action = (
             f'<a class="button ghost table-action" '
             f'href="/batches/edit?batch_id={_escape(batch.id)}">Modifier</a>'

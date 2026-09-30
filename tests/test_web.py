@@ -224,6 +224,40 @@ class WebTests(unittest.TestCase):
         self.assertIn("Nouveau fournisseur", page)
         self.assertIn("Après modification", page)
 
+    def test_batches_are_grouped_by_category_and_product(self) -> None:
+        self.post("/categories", {"name": "Frais"})
+        self.post("/categories", {"name": "Épicerie"})
+        for name, category in (
+            ("Zeste", "Frais"),
+            ("Abricot", "Frais"),
+            ("Riz", "Épicerie"),
+        ):
+            self.post(
+                "/products",
+                {
+                    "name": name,
+                    "unit": "kg",
+                    "category": category,
+                    "minimum": "1",
+                },
+            )
+        for product_id in (1, 2, 3):
+            self.post(
+                "/batches",
+                {
+                    "product_id": str(product_id),
+                    "quantity": "1",
+                    "unit_price": "2",
+                    "purchase_date": "2026-09-30",
+                },
+            )
+
+        page = self.get("/batches")
+
+        self.assertLess(page.index("Épicerie"), page.index("Frais"))
+        self.assertLess(page.index("<strong>Abricot</strong>"), page.index("<strong>Zeste</strong>"))
+        self.assertLess(page.index("<strong>Riz</strong>"), page.index("<strong>Abricot</strong>"))
+
     def test_inventory_adjusts_batch_stock_and_keeps_history(self) -> None:
         self.post(
             "/products",

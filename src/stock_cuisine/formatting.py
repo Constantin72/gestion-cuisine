@@ -2,6 +2,7 @@
 
 from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+import unicodedata
 from typing import Optional
 
 from .models import cents_to_euros
@@ -20,6 +21,17 @@ def format_quantity(value: object) -> str:
     except (InvalidOperation, ValueError):
         return str(value)
     return format(quantity, "f").rstrip("0").rstrip(".") or "0"
+
+
+def sort_text(value: str) -> str:
+    """Prépare un texte pour un tri alphabétique indépendant des accents."""
+
+    decomposed = unicodedata.normalize("NFD", value.casefold())
+    return "".join(
+        character
+        for character in decomposed
+        if unicodedata.category(character) != "Mn"
+    )
 
 
 def format_price(cents: int) -> str:

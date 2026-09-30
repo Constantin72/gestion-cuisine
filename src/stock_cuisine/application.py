@@ -8,9 +8,9 @@ de SQLite.
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
-import unicodedata
 from typing import Dict, List, Optional, Tuple
 
+from .formatting import sort_text
 from .models import Batch, Category, Product, StockMovement
 from .repository import Repository
 from .services import StockService, StockSnapshot, calculate_effective_expiry
@@ -66,17 +66,6 @@ def _validated_date(value: Optional[date]) -> date:
     return reference
 
 
-def _sort_text(value: str) -> str:
-    """Prépare un texte pour un tri alphabétique indépendant des accents."""
-
-    decomposed = unicodedata.normalize("NFD", value.casefold())
-    return "".join(
-        character
-        for character in decomposed
-        if unicodedata.category(character) != "Mn"
-    )
-
-
 class StockApplication:
     """Façade applicative utilisée par les interfaces du projet."""
 
@@ -108,8 +97,8 @@ class StockApplication:
             sorted(
                 products,
                 key=lambda product: (
-                    _sort_text(product.category),
-                    _sort_text(product.name),
+                    sort_text(product.category),
+                    sort_text(product.name),
                     product.id or 0,
                 ),
             )
