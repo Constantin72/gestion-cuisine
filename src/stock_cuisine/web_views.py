@@ -421,12 +421,30 @@ def _batch_rows(
 def _batch_form(products: List[Product]) -> str:
     if not products:
         return '<p class="notice">Créez d’abord un produit avant d’ajouter un lot.</p>'
-    options = "".join(
-        f'<option value="{_escape(product.id)}">#{_escape(product.id)} {_escape(product.name)}</option>'
-        for product in products
+    sorted_products = sorted(
+        products,
+        key=lambda product: (
+            sort_text(product.category),
+            sort_text(product.name),
+            product.id or 0,
+        ),
     )
+    options = []
+    current_category = None
+    for product in sorted_products:
+        category_key = sort_text(product.category)
+        if category_key != current_category:
+            if current_category is not None:
+                options.append("</optgroup>")
+            options.append(f'<optgroup label="{_escape(product.category)}">')
+            current_category = category_key
+        options.append(
+            f'<option value="{_escape(product.id)}">'
+            f'#{_escape(product.id)} {_escape(product.name)}</option>'
+        )
+    options.append("</optgroup>")
     return f"""<form method="post" action="/batches">
-  <label>Produit <select name="product_id" required>{options}</select></label>
+  <label>Produit <select name="product_id" required>{"".join(options)}</select></label>
   <label>Quantité <input name="quantity" type="number" min="0.001" step="0.001" required></label>
   <label>Prix unitaire (€) <input name="unit_price" type="number" min="0" step="0.01" required></label>
   <label>Date d’achat <input name="purchase_date" type="date" value="{date.today().isoformat()}" required></label>

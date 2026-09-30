@@ -258,6 +258,33 @@ class WebTests(unittest.TestCase):
         self.assertLess(page.index("<strong>Abricot</strong>"), page.index("<strong>Zeste</strong>"))
         self.assertLess(page.index("<strong>Riz</strong>"), page.index("<strong>Abricot</strong>"))
 
+    def test_batch_product_dropdown_is_grouped_and_sorted(self) -> None:
+        self.post("/categories", {"name": "Frais"})
+        self.post("/categories", {"name": "Épicerie"})
+        for name, category in (
+            ("Zeste", "Frais"),
+            ("Abricot", "Frais"),
+            ("Riz", "Épicerie"),
+        ):
+            self.post(
+                "/products",
+                {
+                    "name": name,
+                    "unit": "kg",
+                    "category": category,
+                    "minimum": "1",
+                },
+            )
+
+        page = self.get("/batches")
+
+        dropdown_start = page.index('<select name="product_id"')
+        dropdown_end = page.index("</select>", dropdown_start)
+        dropdown = page[dropdown_start:dropdown_end]
+        self.assertLess(dropdown.index('<optgroup label="Épicerie">'), dropdown.index('<optgroup label="Frais">'))
+        self.assertLess(dropdown.index("Abricot</option>"), dropdown.index("Zeste</option>"))
+        self.assertLess(dropdown.index("Riz</option>"), dropdown.index("Abricot</option>"))
+
     def test_inventory_adjusts_batch_stock_and_keeps_history(self) -> None:
         self.post(
             "/products",
