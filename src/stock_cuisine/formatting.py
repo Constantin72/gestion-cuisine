@@ -3,9 +3,9 @@
 from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import unicodedata
-from typing import Optional
+from typing import Optional, Tuple
 
-from .models import cents_to_euros
+from .models import Product, cents_to_euros
 
 
 QUANTITY_QUANTUM = Decimal("0.001")
@@ -32,6 +32,12 @@ def sort_text(value: str) -> str:
         for character in decomposed
         if unicodedata.category(character) != "Mn"
     )
+
+
+def product_sort_key(product: Product) -> Tuple[str, str, int]:
+    """Classe les produits par catégorie puis par nom, sans effet des accents."""
+
+    return sort_text(product.category), sort_text(product.name), product.id or 0
 
 
 def format_price(cents: int) -> str:

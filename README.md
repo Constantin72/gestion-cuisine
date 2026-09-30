@@ -1,153 +1,142 @@
 # Cuisine 4H
 
-Cuisine 4H est une application locale de gestion des stocks d’une cuisine
-associative. Elle suit les produits, les lots, les entrées, les sorties, les
-pertes, les ouvertures et les dates limites. Les données restent dans une base
-SQLite locale, sans dépendance applicative externe.
+Application de gestion des stocks d'une cuisine associative : catégories, produits,
+lots, mouvements, inventaires, dates limites et valeur du stock. Elle fonctionne
+sur un ordinateur ou sur un hébergeur, avec une interface web et une commande de
+maintenance. SQLite conserve les données sur la machine qui exécute l'application.
 
-## Démarrage
+Python 3.9 ou supérieur est requis. L'application utilise uniquement la bibliothèque
+standard ; l'installation du paquet utilise setuptools.
 
-Depuis la racine `gestion_cuisine` :
+## Démarrer sur son ordinateur
+
+Depuis la racine du projet :
 
 ```bash
-python3 -m pip install -e .
-stock-cuisine web
+python3 -m venv .venv
+./.venv/bin/python -m pip install -e .
+./.venv/bin/python -m stock_cuisine --database donnees/stock.db web
 ```
 
-Ouvrir ensuite <http://127.0.0.1:8000/>. Sans installation, le mode développement
-reste disponible avec `PYTHONPATH=src python3 -m stock_cuisine web`.
-
-La base utilisée par défaut est `stock.db` dans le dossier courant. Un autre
-fichier peut être choisi avant la commande :
+Ouvrir <http://127.0.0.1:8000/>. La commande doit rester active ; `Ctrl+C` arrête
+le serveur. Sans installation du paquet :
 
 ```bash
-stock-cuisine --database donnees/stock.db web --port 8080
+PYTHONPATH=src python3 -m stock_cuisine --database donnees/stock.db web
 ```
 
-Le dossier parent est créé automatiquement. Le fichier `stock.db` fourni dans
-le projet est conservé comme donnée locale et n’est jamais réinitialisé par
-l’application.
+Le dossier et la base sont créés au premier démarrage s'ils n'existent pas.
+Conserver les bases de travail hors de Git. Toujours garder le même chemin : `stock.db` et
+`donnees/stock.db` sont deux fichiers distincts. Les chemins relatifs partent du
+dossier courant. L'option `--database` se place avant la sous-commande ; sans elle,
+le programme utilise `stock.db`.
 
-## Parcours quotidien
+Pour une instance partagée hébergée, suivre [DEPLOYMENT.md](DEPLOYMENT.md).
+Les collaborateurs utilisent leur navigateur sans compte GitHub. GitHub distribue
+le code ; l'hébergeur exécute le serveur et conserve la base partagée.
 
-Créer un produit puis un premier lot :
+## Utiliser le stock
+
+1. Dans **Catégories**, créer les familles de produits.
+2. Dans **Produits**, saisir le nom, l'unité (`kg`, `L`, `pièce`), le seuil minimal
+   et éventuellement la durée de conservation après ouverture.
+3. Dans **Lots**, ajouter quantité, prix unitaire, dates et fournisseur. Le menu
+   des produits et la liste des lots sont classés par catégorie puis nom.
+4. Depuis le **Tableau de bord**, enregistrer une entrée, une sortie ou une perte.
+5. Dans **Lots**, utiliser **Ouvrir** pour dater la première ouverture et
+   **Inventaire** pour saisir la quantité réellement comptée.
+6. Consulter **Historique** et **Alertes** pour suivre changements et échéances.
+
+Le prix d'un lot est le prix **par unité du produit**, pas le total de l'achat.
+Ainsi, 3 kg à 2,50 €/kg valent 7,50 €. Après une sortie de 1 kg, la valeur restante
+est 5 €. Chaque lot garde son propre prix ; les valeurs sont additionnées par
+produit et pour l'ensemble du stock.
+
+**Modifier** corrige les informations d'un produit ou d'un lot. Le produit associé
+à un lot est fixe. La quantité se change par mouvement ou inventaire, avec une
+trace dans l'historique. Un produit n'est supprimable que s'il n'a aucun lot,
+y compris épuisé. L'accès hébergé utilise un identifiant partagé : il n'y a pas
+encore de rôles ni d'attribution des mouvements à une personne.
+
+## Commandes utiles
+
+Tous les exemples utilisent `donnees/stock.db` depuis la racine du projet.
+Après installation, `stock-cuisine` peut remplacer `python -m stock_cuisine`.
 
 ```bash
-stock-cuisine product add \
-  --name "Lait" --unit L --category "Frais" \
-  --minimum 2 --shelf-life 3
-
-stock-cuisine batch add \
-  --product-id 1 --quantity 10 --unit-price 1.25 \
-  --purchase-date 2026-09-29 --expiry-date 2026-10-10 \
-  --supplier "Fournisseur local"
+./.venv/bin/python -m stock_cuisine --database donnees/stock.db product add \
+  --name "Lait" --unit L --category "Frais" --minimum 2 --shelf-life 3
+./.venv/bin/python -m stock_cuisine --database donnees/stock.db product list
 ```
 
-Enregistrer une consommation ou une perte :
+Reprendre l'identifiant affiché à la création du produit pour ajouter le lot,
+puis l'identifiant du lot pour enregistrer un mouvement :
 
 ```bash
-stock-cuisine movement add \
+./.venv/bin/python -m stock_cuisine --database donnees/stock.db batch add \
+  --product-id 1 --quantity 10 --unit-price 1.25
+./.venv/bin/python -m stock_cuisine --database donnees/stock.db movement add \
   --batch-id 1 --type out --quantity 1.5 --reason "Déjeuner"
+./.venv/bin/python -m stock_cuisine --database donnees/stock.db stock list
+./.venv/bin/python -m stock_cuisine --database donnees/stock.db alerts --days 14
 ```
 
-Les types de mouvement sont `in`, `out` et `loss`. Une sortie supérieure au
-stock disponible est refusée et chaque lot crée automatiquement son entrée
-initiale.
+Les dates explicites utilisent `AAAA-MM-JJ`. Les types de mouvement sont `in`
+(entrée), `out` (sortie), `loss` (perte). Consulter `--help` pour les options de
+chaque commande. La modification et l'inventaire sont disponibles dans le web.
 
-Consulter l’état du stock et les alertes :
+## Exporter et sauvegarder
 
 ```bash
-stock-cuisine stock list
-stock-cuisine movement list --limit 20
-stock-cuisine alerts --days 14
+./.venv/bin/python -m stock_cuisine --database donnees/stock.db export stock \
+  --output exports/stock.csv
+./.venv/bin/python -m stock_cuisine --database donnees/stock.db backup \
+  --output sauvegardes/stock-2026-10-01.db
 ```
 
-Pour supprimer un produit qui n'a encore aucun lot, ouvrir la page
-« Produits », cliquer sur « Supprimer » puis confirmer. En ligne de commande :
-`stock-cuisine product delete --product-id 3`.
+Les exports `products`, `stock`, `batches` et `movements` sont des CSV UTF-8
+séparés par des virgules. Les montants sont en centimes ; les quantités utilisent
+le point décimal. Des liens d'export existent aussi dans l'interface.
 
-Un produit auquel un lot est associé ne peut pas être supprimé, même si son
-stock est épuisé : son historique est conservé.
+Le CSV ne remplace pas une sauvegarde. `backup` produit une copie SQLite
+cohérente même lorsque le serveur fonctionne. La commande refuse une source
+absente et une destination identique à la source. Une destination existante
+peut être remplacée : choisir un nom daté et conserver une copie hors du serveur.
+Voir [DEPLOYMENT.md](DEPLOYMENT.md) pour l'exploitation et la restauration.
 
-Les catégories se gèrent depuis la page « Catégories ». Après avoir ajouté une
-catégorie, elle apparaît dans le menu déroulant du formulaire de création d'un
-produit.
+## Règles et architecture
 
-Les boutons « Modifier » des pages Produits et Lots permettent de corriger les
-informations sans effacer l'historique. La quantité d'un lot continue de se
-modifier par les mouvements de stock.
+- Quantités arrondies à trois décimales ; prix en centimes entiers.
+- Valeur d'un lot arrondie au centime après multiplication quantité × prix unitaire.
+- Stock négatif interdit ; création d'un lot et entrée initiale atomiques.
+- Inventaire enregistré comme entrée ou perte correspondant à l'écart constaté.
+- Expiration et ouverture ne peuvent pas précéder l'achat.
+- Un lot expire le lendemain de sa date limite ; la conservation après ouverture
+  peut avancer cette date. Les alertes ignorent les lots épuisés.
 
-La valeur du stock est calculée automatiquement pour chaque lot à partir de la
-quantité restante et du prix unitaire, puis agrégée par produit et pour
-l'inventaire total.
+| Module | Responsabilité |
+| --- | --- |
+| `models.py` | Objets métier et conversions monétaires |
+| `db.py` | Connexions, transactions et migration SQLite |
+| `repository.py` | Validation avant écriture, persistance et historique atomique |
+| `services.py` | Calculs communs de stock, valeur et péremption |
+| `application.py` | Composition des vues et actions partagées |
+| `formatting.py` | Formats d'affichage et tri des produits |
+| `cli.py` | Commande terminal et maintenance |
+| `web.py`, `web_views.py` | HTTP, authentification, formulaires et rendu |
+| `export.py`, `backup.py` | CSV et sauvegarde SQLite |
 
-Depuis la page Lots, « Inventaire » permet de saisir la quantité réellement
-comptée. L'écart est enregistré automatiquement comme une entrée ou une perte.
-
-## Exports et sauvegardes
-
-Les données peuvent être exportées en CSV (`products`, `stock`, `batches` ou
-`movements`) et la base peut être copiée avec l’API de sauvegarde SQLite :
-
-```bash
-stock-cuisine export stock --output exports/stock.csv
-stock-cuisine export movements --output exports/mouvements.csv
-stock-cuisine backup --output sauvegardes/stock-2026-09-29.db
-```
-
-Les mêmes exports sont disponibles depuis les pages Produits, Lots et Tableau
-de bord via les liens « Exporter CSV ».
-
-## Accès depuis Internet
-
-Le projet fournit un déploiement Docker Compose prêt à l’emploi avec stockage
-SQLite persistant, authentification et terminaison HTTPS via Caddy. La
-procédure complète se trouve dans [DEPLOYMENT.md](DEPLOYMENT.md).
-
-Le mode local reste inchangé. Pour une mise en ligne, utiliser un serveur ou
-un hébergeur Docker, un nom de domaine et un volume persistant pour `/data`.
-
-## Règles métier
-
-- Les quantités sont arrondies à trois décimales avec un arrondi décimal.
-- Les prix sont conservés en centimes entiers.
-- La valeur d'un lot est la quantité restante multipliée par son prix unitaire,
-  arrondie au centime.
-- Une date d’expiration ou d’ouverture ne peut pas précéder l’achat.
-- Un lot reste valable le jour exact de sa date limite et expire le lendemain.
-- Après ouverture, la durée de conservation du produit peut avancer la date limite.
-- Les produits et lots associés à un historique ne peuvent pas être supprimés.
-- Les écritures de stock et leur mouvement sont atomiques.
-
-## Architecture
-
-```text
-gestion_cuisine/
-├── pyproject.toml
-├── README.md
-├── ROADMAP.md
-├── src/stock_cuisine/
-│   ├── models.py          modèles et montants
-│   ├── db.py              connexion, schéma et transactions SQLite
-│   ├── repository.py      persistance et écritures atomiques
-│   ├── services.py        règles de stock et dates limites
-│   ├── application.py     cas d’usage partagés par les interfaces
-│   ├── export.py          exports CSV
-│   ├── backup.py          sauvegardes SQLite
-│   ├── cli.py             commande stock-cuisine
-│   ├── web.py             routage HTTP local
-│   └── web_views.py       rendu de l’interface web
-└── tests/
-```
-
-Les interfaces ne contiennent pas de SQL et les règles métier restent
-testables sans serveur web.
-
-## Tests
+## Développer et vérifier
 
 ```bash
 PYTHONPATH=src python3 -m unittest discover -s tests -v
+git diff --check
 ```
 
-La suite couvre SQLite, les règles métier, la CLI, les exports et le parcours
-HTTP principal.
+Les tests utilisent des bases en mémoire ou temporaires ; les tests HTTP ouvrent
+des ports locaux temporaires. Les conventions sont : indentation de quatre
+espaces, noms Python en anglais et `snake_case`, annotations de types, messages
+et documentation en français. Les règles communes se placent dans les services
+ou le repository, et non dans les formulaires.
+
+Voir [ROADMAP.md](ROADMAP.md) pour les évolutions restantes.

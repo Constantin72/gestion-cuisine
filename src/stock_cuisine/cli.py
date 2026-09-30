@@ -17,10 +17,10 @@ from .formatting import (
     format_date as _format_date,
     format_price as _format_price,
     format_quantity as _format_quantity,
+    movement_label,
 )
-from .models import Batch, Product, StockMovement, cents_to_euros, euros_to_cents
+from .models import Batch, Product, StockMovement, euros_to_cents
 from .repository import Repository
-from .services import StockService
 
 
 CommandHandler = Callable[[Repository, argparse.Namespace], None]
@@ -80,7 +80,7 @@ def _product_name_by_id(repository: Repository) -> dict[int, str]:
 
 
 def _handle_product_add(repository: Repository, args: argparse.Namespace) -> None:
-    product = repository.create_product(
+    product = StockApplication(repository).create_product(
         Product(
             name=args.name,
             unit=args.unit,
@@ -121,7 +121,7 @@ def _handle_product_delete(repository: Repository, args: argparse.Namespace) -> 
 
 
 def _handle_batch_add(repository: Repository, args: argparse.Namespace) -> None:
-    batch = repository.create_batch(
+    batch = StockApplication(repository).create_batch(
         Batch(
             product_id=args.product_id,
             quantity=args.quantity,
@@ -160,12 +160,12 @@ def _handle_batch_list(repository: Repository, args: argparse.Namespace) -> None
 
 
 def _handle_batch_open(repository: Repository, args: argparse.Namespace) -> None:
-    batch = repository.mark_batch_open(args.batch_id, args.opened_date)
+    batch = StockApplication(repository).open_batch(args.batch_id, args.opened_date)
     print(f"Lot #{batch.id} ouvert le {batch.opened_date.isoformat()}")
 
 
 def _handle_movement_add(repository: Repository, args: argparse.Namespace) -> None:
-    movement = repository.record_movement(
+    movement = StockApplication(repository).record_movement(
         StockMovement(
             batch_id=args.batch_id,
             type=args.movement_type,
@@ -191,11 +191,6 @@ def _handle_movement_list(repository: Repository, args: argparse.Namespace) -> N
     )
     batches = {batch.id: batch for batch in repository.list_batches()}
     product_names = _product_name_by_id(repository)
-    movement_labels = {
-        "in": "Entrée",
-        "out": "Sortie",
-        "loss": "Perte",
-    }
     _print_table(
         ("ID", "Date", "Lot", "Produit", "Type", "Quantité", "Motif"),
         (
@@ -207,7 +202,7 @@ def _handle_movement_list(repository: Repository, args: argparse.Namespace) -> N
                     batches[movement.batch_id].product_id,
                     "?",
                 ),
-                movement_labels.get(movement.type, movement.type),
+                movement_label(movement.type),
                 _format_quantity(movement.quantity),
                 movement.reason,
             )
@@ -217,26 +212,20 @@ def _handle_movement_list(repository: Repository, args: argparse.Namespace) -> N
 
 
 def _handle_stock_list(repository: Repository, args: argparse.Namespace) -> None:
-    service = StockService(repository)
-    snapshot = service.stock_snapshot()
-    totals = snapshot.totals
-    values = snapshot.values_cents
+    stock = StockApplication(repository).product_stock()
     _print_table(
         ("ID", "Produit", "Stock", "Unité", "Valeur", "Seuil", "État"),
         (
             (
-                product.id,
-                product.name,
-                _format_quantity(totals.get(product.id, 0.0)),
-                product.unit,
-                _format_price(values.get(product.id, 0)),
-                _format_quantity(product.min_stock_threshold),
-                "SOUS SEUIL"
-                if product.id is not None
-                and totals.get(product.id, 0.0) < product.min_stock_threshold
-                else "OK",
+                line.product.id,
+                line.product.name,
+                _format_quantity(line.quantity),
+                line.product.unit,
+                _format_price(line.value_cents),
+                _format_quantity(line.product.min_stock_threshold),
+                "SOUS SEUIL" if line.below_minimum else "OK",
             )
-            for product in repository.list_products()
+            for line in stock
         ),
     )
 
@@ -286,13 +275,6 @@ def _handle_export(repository: Repository, args: argparse.Namespace) -> None:
     path = write_csv(repository, args.kind, args.output)
     assert path is not None
     print(f"Export {args.kind} écrit dans {path}")
-
-
-def _handle_backup(repository: Repository, args: argparse.Namespace) -> None:
-    """Crée une copie cohérente de la base SQLite."""
-
-    path = backup_database(args.database, args.output)
-    print(f"Sauvegarde écrite dans {path}")
 
 
 def _add_product_commands(subparsers: argparse._SubParsersAction) -> None:
@@ -411,7 +393,6 @@ def build_parser() -> argparse.ArgumentParser:
         "backup", help="sauvegarder la base SQLite"
     )
     backup_parser.add_argument("--output", required=True, help="fichier SQLite de sortie")
-    backup_parser.set_defaults(handler=_handle_backup)
     return parser
 
 
@@ -420,12 +401,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     parser = build_parser()
     args = parser.parse_args(argv)
-    handler: CommandHandler = args.handler
-
     try:
+        if args.command == "backup":
+            path = backup_database(args.database, args.output)
+            print(f"Sauvegarde écrite dans {path}")
+            return 0
+        handler: CommandHandler = args.handler
         with closing(connect_database(args.database)) as connection:
             handler(Repository(connection), args)
-    except (KeyError, ValueError, OSError, sqlite3.Error) as error:
+    except (KeyError, TypeError, ValueError, RuntimeError, OSError, sqlite3.Error) as error:
         print(f"Erreur : {error}", file=sys.stderr)
         return 2
     return 0

@@ -4,9 +4,9 @@ from dataclasses import replace
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import sqlite3
-from typing import Dict, List, Optional
+from typing import ContextManager, Dict, List, Optional
 
-from .db import transaction
+from .db import read_transaction, transaction
 from .models import Batch, Category, Product, StockMovement
 
 
@@ -279,6 +279,11 @@ class Repository:
     def __init__(self, connection: sqlite3.Connection) -> None:
         self.connection = connection
         self.connection.row_factory = sqlite3.Row
+
+    def read_snapshot(self) -> ContextManager[sqlite3.Connection]:
+        """Regroupe des lectures dans une transaction cohérente, réutilisable."""
+
+        return read_transaction(self.connection)
 
     def _ensure_product_name_available(
         self, name: str, excluded_id: Optional[int] = None
@@ -569,31 +574,44 @@ class Repository:
         return [_batch_from_row(row) for row in rows]
 
     def update_batch(self, batch: Batch) -> Batch:
-        """Met à jour un lot, quantité comprise, avec validation des dates."""
+        """Corrige les informations d'un lot en préservant stock et historique.
+
+        La quantité et l'ouverture reçues doivent encore correspondre à la
+        base : une modification concurrente impose de recharger le lot.
+        """
 
         prepared = _normalise_batch(batch)
         batch_id = _validate_id(prepared.id, "L'identifiant du lot")
 
         with transaction(self.connection):
+            current = self.get_batch(batch_id)
+            if current is None:
+                raise KeyError("Lot introuvable.")
+            if prepared.product_id != current.product_id:
+                raise ValueError("Le produit d'un lot existant ne peut pas être changé.")
+            if prepared.quantity != current.quantity:
+                raise ValueError(
+                    "La quantité a changé. Rechargez le lot et utilisez un mouvement "
+                    "ou un inventaire pour ajuster le stock."
+                )
+            if prepared.opened_date != current.opened_date:
+                raise ValueError(
+                    "La date d'ouverture a changé. Rechargez le lot ; "
+                    "utilisez l'action Ouvrir pour enregistrer son ouverture."
+                )
             cursor = self.connection.execute(
                 """
                 UPDATE batches
-                SET product_id = ?, quantity = ?, unit_price_cents = ?,
-                    purchase_date = ?, expiry_date = ?, opened_date = ?,
+                SET unit_price_cents = ?, purchase_date = ?, expiry_date = ?,
                     supplier = ?, notes = ?
                 WHERE id = ?
                 """,
                 (
-                    prepared.product_id,
-                    prepared.quantity,
                     prepared.unit_price_cents,
                     _date_to_iso(prepared.purchase_date),
                     None
                     if prepared.expiry_date is None
                     else _date_to_iso(prepared.expiry_date),
-                    None
-                    if prepared.opened_date is None
-                    else _date_to_iso(prepared.opened_date),
                     prepared.supplier,
                     prepared.notes,
                     batch_id,

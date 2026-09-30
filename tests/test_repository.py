@@ -1,5 +1,6 @@
 """Tests du repository SQLite."""
 
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -172,18 +173,44 @@ class RepositoryTests(RepositoryTestCase):
             Batch(
                 id=batch.id,
                 product_id=product.id,
-                quantity=1.5,
+                quantity=2.0,
                 unit_price_cents=200,
                 purchase_date=PURCHASE_DATE,
                 supplier="Association",
                 notes="Modifié",
             )
         )
-        self.assertAlmostEqual(updated_batch.quantity, 1.5)
+        self.assertAlmostEqual(updated_batch.quantity, 2.0)
         self.assertEqual(updated_batch.unit_price_cents, 200)
+        self.assertEqual(self.movement_count(batch.id), 1)
 
         with self.assertRaises(sqlite3.IntegrityError):
             self.repository.delete_batch(batch.id)
+
+    def test_batch_edit_cannot_bypass_stock_history(self) -> None:
+        product = self.repository.create_product(self.product())
+        other_product = self.repository.create_product(self.product("Crème"))
+        batch = self.repository.create_batch(self.batch(product.id, 2.0))
+        for changes in (
+            {"quantity": 1.5},
+            {"product_id": other_product.id},
+            {"opened_date": PURCHASE_DATE},
+        ):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                self.repository.update_batch(replace(batch, **changes))
+        self.assertEqual(self.repository.get_batch(batch.id), batch)
+        self.assertEqual(self.movement_count(batch.id), 1)
+
+    def test_stale_batch_edit_preserves_a_concurrent_movement(self) -> None:
+        product = self.repository.create_product(self.product())
+        stale_batch = self.repository.create_batch(self.batch(product.id, 2.0))
+        self.repository.record_movement(self.movement(stale_batch.id, "out", 0.5))
+
+        with self.assertRaises(ValueError):
+            self.repository.update_batch(replace(stale_batch, unit_price_cents=200))
+
+        self.assertEqual(self.repository.get_batch(stale_batch.id).quantity, 1.5)
+        self.assertEqual(self.movement_count(stale_batch.id), 2)
 
     def test_duplicate_product_name_is_rejected(self) -> None:
         self.repository.create_product(self.product("Lait"))

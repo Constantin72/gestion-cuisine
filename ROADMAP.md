@@ -1,46 +1,46 @@
-# Feuille de route — Stock Cuisine
+# Feuille de route — Cuisine 4H
 
-## Vision
+## Objectif
 
-Proposer une gestion de stock simple, fiable et compréhensible par une équipe
-associative, avec une application locale et des données récupérables.
+Fournir à une petite équipe associative un stock partagé, compréhensible et
+récupérable, utilisable localement ou sur un hébergeur.
 
-## Réalisé dans la refonte 2.0
+## Fonctionnalités disponibles
 
-- [x] Projet installable depuis sa racine avec `pyproject.toml`.
-- [x] Couche applicative partagée entre la CLI et le web.
-- [x] Interface web responsive avec tableau de bord, recherche et filtres.
-- [x] Historique des mouvements et règles de stock conservés.
-- [x] Exports CSV des produits, du stock, des lots et des mouvements.
-- [x] Sauvegarde cohérente de la base via SQLite `backup`.
-- [x] Transactions atomiques pour les opérations de stock.
-- [x] Déploiement Docker avec stockage persistant, HTTPS et protection d’accès partagée.
+- [x] Produits, catégories, lots et correction de leurs informations.
+- [x] Entrées, sorties, pertes, première ouverture et historique.
+- [x] Inventaire avec mouvement d'ajustement et écritures atomiques.
+- [x] Alertes de seuil et de péremption, y compris après ouverture.
+- [x] Valeur du stock selon les quantités restantes et le prix de chaque lot.
+- [x] Tri par catégorie et nom dans les produits, lots et choix d'un produit.
+- [x] Interface web, commande terminal et exports CSV.
+- [x] Sauvegarde par l'API SQLite et migration du schéma v1 vers v2.
+- [x] Accès web partagé protégé par authentification et contrôle des formulaires.
+- [x] Documentation Alwaysdata et alternative Docker/Caddy.
 
-## Étape suivante — qualité opérationnelle
+## Fiabilité et exploitation
 
-- [ ] Ajouter une restauration guidée depuis une sauvegarde validée.
-- [ ] Ajouter des migrations de schéma versionnées au fil des évolutions.
-- [ ] Ajouter les corrections contrôlées de lots avec mouvement d’ajustement.
-- [ ] Ajouter une liste de courses calculée à partir des seuils.
+- [ ] Restauration guidée avec validation préalable de la sauvegarde.
+- [ ] Sauvegardes automatiques avec rétention et vérification de restauration.
+- [ ] Vérifications automatiques sur plusieurs versions de Python.
+- [ ] Pagination des grandes listes et limitation des exports volumineux.
+- [ ] Gestion explicite des conflits lorsque deux personnes modifient une fiche.
 
-## Confort d’utilisation
+## Ergonomie
 
-- [ ] Ajouter une vue « à consommer en priorité » triée par date limite.
-- [ ] Permettre la modification guidée des produits et des informations de lot.
-- [ ] Ajouter un export imprimable de la liste de courses.
-- [ ] Ajouter des messages d’aide et une validation plus progressive des formulaires.
+- [ ] Vue « à consommer en priorité » utilisant la date limite effective.
+- [ ] Liste de courses calculée à partir des seuils et export imprimable.
+- [ ] Conservation des saisies lorsqu'un formulaire contient une erreur.
+- [ ] Comptes individuels, rôles et identification de l'auteur des mouvements,
+  si les besoins de l'association le justifient.
 
-## Déploiement associatif
+## Principes de maintenance
 
-- [ ] Documenter le choix entre poste local et serveur du réseau.
-- [ ] Ajouter des comptes individuels et des rôles si plusieurs personnes utilisent l’application.
-- [ ] Définir une politique de sauvegardes automatiques et de restauration testée.
+- Conserver la bibliothèque standard et SQLite tant qu'ils répondent à l'usage.
+- Centraliser les calculs de stock et d'alertes, partagés entre web, CLI et exports.
+- Valider les écritures dans le repository, au plus près de la transaction.
+- Faire évoluer le schéma avec une migration testée et une sauvegarde préalable.
+- Maintenir le guide d'exploitation à jour avec le mode de déploiement utilisé.
 
-## Décisions de conception
-
-- L’application reste sans dépendance externe pour simplifier l’installation.
-- SQLite reste le stockage de référence tant que l’usage reste local ou familial.
-- Le repository ne porte que la persistance ; les règles sont exposées par les
-  services et la couche applicative.
-- Les exports et sauvegardes sont explicites pour éviter toute perte silencieuse
-  de données.
+La présence d'une commande de sauvegarde ne signifie pas que des sauvegardes
+automatiques sont déjà planifiées sur l'hébergement.

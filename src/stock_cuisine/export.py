@@ -3,7 +3,7 @@
 import csv
 from io import StringIO
 from pathlib import Path
-from typing import IO, Optional, Union
+from typing import IO, Iterator, Optional, Tuple, Union
 
 from .application import StockApplication
 from .formatting import format_date, format_quantity
@@ -15,9 +15,8 @@ ExportTarget = Union[str, Path, IO[str]]
 EXPORT_KINDS = ("products", "stock", "batches", "movements")
 
 
-def _csv_rows(repository: Repository, kind: str):
-    if kind not in EXPORT_KINDS:
-        raise ValueError("Le type d'export est invalide.")
+def _csv_rows(repository: Repository, kind: str) -> Iterator[Tuple[object, ...]]:
+    """Produit les lignes d'un type d'export déjà validé par ``write_csv``."""
 
     if kind == "products":
         yield (
@@ -128,6 +127,8 @@ def _csv_rows(repository: Repository, kind: str):
 def write_csv(repository: Repository, kind: str, target: ExportTarget) -> Optional[Path]:
     """Écrit un export CSV et retourne son chemin si la cible est un fichier."""
 
+    if kind not in EXPORT_KINDS:
+        raise ValueError("Le type d'export est invalide.")
     close_target = isinstance(target, (str, Path))
     if close_target:
         path = Path(target)
@@ -139,7 +140,8 @@ def write_csv(repository: Repository, kind: str, target: ExportTarget) -> Option
 
     try:
         writer = csv.writer(stream)
-        writer.writerows(_csv_rows(repository, kind))
+        with repository.read_snapshot():
+            writer.writerows(_csv_rows(repository, kind))
     finally:
         if close_target:
             stream.close()

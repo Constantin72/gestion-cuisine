@@ -1,4 +1,4 @@
-"""Serveur HTTP local de Stock Cuisine.
+"""Serveur HTTP de Stock Cuisine, utilisable derrière un proxy HTTPS.
 
 Le module est un adaptateur très léger : il ouvre une connexion par requête,
 traduit les formulaires en objets métier et délègue le rendu à ``web_views``.
@@ -23,15 +23,9 @@ from urllib.parse import parse_qs, urlencode, urlparse
 from .application import StockApplication
 from .db import connect_database
 from .export import EXPORT_KINDS, csv_text
-from .formatting import (
-    format_date as _format_date,
-    format_price as _format_price,
-    format_quantity as _format_quantity,
-)
 from .models import Batch, Category, Product, StockMovement, euros_to_cents
 from .repository import Repository
 from .web_views import (
-    STYLE,
     _page,
     alerts_page,
     batch_edit_page,
@@ -43,6 +37,9 @@ from .web_views import (
     product_edit_page,
     products_page,
 )
+
+
+MAX_FORM_BYTES = 64 * 1024
 
 
 def _escape(value: object) -> str:
@@ -159,8 +156,12 @@ class StockRequestHandler(BaseHTTPRequestHandler):
         if (
             not separator
             or configured_password is None
-            or not hmac.compare_digest(username, self.auth_user)
-            or not hmac.compare_digest(password, configured_password)
+            or not hmac.compare_digest(
+                username.encode("utf-8"), self.auth_user.encode("utf-8")
+            )
+            or not hmac.compare_digest(
+                password.encode("utf-8"), configured_password.encode("utf-8")
+            )
         ):
             self._send_unauthorized()
             return False
@@ -189,7 +190,9 @@ class StockRequestHandler(BaseHTTPRequestHandler):
         return bool(
             cookie_token
             and form_token
-            and hmac.compare_digest(form_token, cookie_token)
+            and hmac.compare_digest(
+                form_token.encode("utf-8"), cookie_token.encode("utf-8")
+            )
         )
 
     def _send_html(self, content: str, status: int = 200) -> None:
@@ -333,9 +336,21 @@ class StockRequestHandler(BaseHTTPRequestHandler):
         except ValueError:
             self._error("La requête est invalide.")
             return
-        form = parse_qs(
-            self.rfile.read(length).decode("utf-8"), keep_blank_values=True
-        )
+        if length < 0:
+            self._error("La taille de la requête est invalide.")
+            return
+        if length > MAX_FORM_BYTES:
+            self._error("Le formulaire est trop volumineux (64 Kio maximum).", 413)
+            return
+        try:
+            form = parse_qs(
+                self.rfile.read(length).decode("utf-8"),
+                keep_blank_values=True,
+                max_num_fields=50,
+            )
+        except (UnicodeError, ValueError):
+            self._error("Le formulaire est mal encodé ou contient trop de champs.")
+            return
         path = urlparse(self.path).path
         try:
             if self.auth_user is not None and not self._is_valid_csrf(form):
@@ -430,8 +445,6 @@ class StockRequestHandler(BaseHTTPRequestHandler):
                 self._redirect("Inventaire enregistré.", "/batches")
             elif path == "/movements":
                 movement_type = _form_value(form, "movement_type")
-                if movement_type not in ("in", "out", "loss"):
-                    raise ValueError("Le type de mouvement est invalide.")
                 movement_date = _date_form_value(form, "movement_date")
                 if movement_date is None:
                     raise ValueError("La date du mouvement est obligatoire.")
@@ -454,11 +467,6 @@ class StockRequestHandler(BaseHTTPRequestHandler):
             self._error(str(error))
         finally:
             self._close_repository()
-
-    def log_message(self, format: str, *args: object) -> None:
-        """Conserve le comportement standard des logs HTTP."""
-
-        return super().log_message(format, *args)
 
 
 class StockHTTPServer(ThreadingHTTPServer):

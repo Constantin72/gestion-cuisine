@@ -6,14 +6,19 @@ de SQLite.
 """
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
-from decimal import Decimal
+from datetime import date
 from typing import Dict, List, Optional, Tuple
 
-from .formatting import sort_text
+from .formatting import product_sort_key
 from .models import Batch, Category, Product, StockMovement
 from .repository import Repository
-from .services import StockService, StockSnapshot, calculate_effective_expiry
+from .services import (
+    StockService,
+    StockSnapshot,
+    calculate_effective_expiry,
+    validated_days,
+    validated_reference_date,
+)
 
 
 @dataclass(frozen=True)
@@ -59,25 +64,12 @@ class Dashboard:
     total_value_cents: int = 0
 
 
-def _validated_date(value: Optional[date]) -> date:
-    reference = date.today() if value is None else value
-    if isinstance(reference, datetime) or not isinstance(reference, date):
-        raise TypeError("La date de référence doit être une date Python.")
-    return reference
-
-
 class StockApplication:
     """Façade applicative utilisée par les interfaces du projet."""
 
     def __init__(self, repository: Repository) -> None:
         self.repository = repository
         self.service = StockService(repository)
-
-    @staticmethod
-    def _validated_days(days: int) -> int:
-        if isinstance(days, bool) or not isinstance(days, int) or days < 0:
-            raise ValueError("Le nombre de jours doit être un entier positif ou nul.")
-        return days
 
     @staticmethod
     def _product_stock_from_snapshot(
@@ -93,16 +85,7 @@ class StockApplication:
                     if needle in product.name.casefold()
                     or needle in product.category.casefold()
                 )
-        products = tuple(
-            sorted(
-                products,
-                key=lambda product: (
-                    sort_text(product.category),
-                    sort_text(product.name),
-                    product.id or 0,
-                ),
-            )
-        )
+        products = tuple(sorted(products, key=product_sort_key))
 
         result = []
         for product in products:
@@ -120,35 +103,6 @@ class StockApplication:
             )
         return result
 
-    @staticmethod
-    def _classify_expiry(
-        snapshot: StockSnapshot,
-        reference_date: date,
-        days: Optional[int] = None,
-    ) -> Tuple[List[Batch], List[Batch]]:
-        deadline = None
-        if days is not None:
-            deadline = reference_date + timedelta(days=days)
-        products = {
-            product.id: product
-            for product in snapshot.products
-            if product.id is not None
-        }
-        expired = []
-        expiring = []
-        for batch in snapshot.batches:
-            product = products.get(batch.product_id)
-            if product is None:
-                continue
-            effective_expiry = calculate_effective_expiry(product, batch)
-            if effective_expiry is None:
-                continue
-            if effective_expiry < reference_date:
-                expired.append(batch)
-            elif deadline is not None and effective_expiry <= deadline:
-                expiring.append(batch)
-        return expired, expiring
-
     def product_stock(self, search: Optional[str] = None) -> List[ProductStock]:
         """Retourne le stock de chaque produit, avec recherche facultative."""
 
@@ -159,35 +113,31 @@ class StockApplication:
     def dashboard(self, reference_date: Optional[date] = None) -> Dashboard:
         """Construit un tableau de bord cohérent en une seule opération."""
 
-        today = _validated_date(reference_date)
-        snapshot = self.service.stock_snapshot()
+        today = validated_reference_date(reference_date)
+        with self.repository.read_snapshot():
+            snapshot = self.service.stock_snapshot()
+            latest_movements = tuple(self.repository.list_movements(limit=10))
         stock = self._product_stock_from_snapshot(snapshot)
-        expired, _ = self._classify_expiry(snapshot, today)
+        expired, _ = snapshot.classify_expiry(today)
         return Dashboard(
             reference_date=today,
             products=tuple(stock),
             active_batches=len(snapshot.batches),
             below_minimum=sum(1 for line in stock if line.below_minimum),
             expired=len(expired),
-            latest_movements=tuple(self.repository.list_movements(limit=10)),
+            latest_movements=latest_movements,
             total_value_cents=sum(line.value_cents for line in stock),
         )
 
     def alerts(self, days: int = 7, reference_date: Optional[date] = None) -> AlertReport:
         """Construit le rapport des alertes et calcule les dates limites effectives."""
 
-        today = _validated_date(reference_date)
-        number_of_days = self._validated_days(days)
+        today = validated_reference_date(reference_date)
+        number_of_days = validated_days(days)
         snapshot = self.service.stock_snapshot()
-        below_minimum = tuple(
-            product
-            for product in snapshot.products
-            if product.id is not None
-            and Decimal(str(snapshot.totals.get(product.id, 0.0)))
-            < Decimal(str(product.min_stock_threshold))
-        )
-        expired_batches, expiring_batches = self._classify_expiry(
-            snapshot, today, number_of_days
+        below_minimum = tuple(snapshot.products_below_minimum())
+        expired_batches, expiring_batches = snapshot.classify_expiry(
+            today, number_of_days
         )
         products: Dict[Optional[int], Product] = {
             product.id: product for product in snapshot.products

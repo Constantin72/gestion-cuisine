@@ -185,6 +185,15 @@ class CliTests(unittest.TestCase):
         self.assertEqual(output, "")
         self.assertIn("des lots lui sont associés", errors)
 
+    def test_backup_of_missing_database_returns_an_error_without_creating_it(self) -> None:
+        target = str(Path(self.temp_directory.name) / "backup.db")
+        result, output, errors = self.run_cli("backup", "--output", target)
+        self.assertEqual(result, 2)
+        self.assertEqual(output, "")
+        self.assertIn("Base source introuvable", errors)
+        self.assertFalse(Path(self.database).exists())
+        self.assertFalse(Path(target).exists())
+
 
 if __name__ == "__main__":
     unittest.main()

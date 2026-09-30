@@ -172,6 +172,22 @@ def transaction(connection: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
         connection.commit()
 
 
+@contextmanager
+def read_transaction(connection: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
+    """Partage un même état SQLite entre plusieurs lectures successives."""
+
+    if connection.in_transaction:
+        yield connection
+        return
+    connection.execute("BEGIN")
+    try:
+        yield connection
+        connection.commit()
+    except BaseException:
+        connection.rollback()
+        raise
+
+
 def initialize_database(connection: sqlite3.Connection) -> None:
     """Active les clés étrangères et applique les migrations connues."""
 
@@ -207,5 +223,9 @@ def connect_database(database: str = ":memory:") -> sqlite3.Connection:
     if database != ":memory:":
         Path(database).parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(database, timeout=5)
-    initialize_database(connection)
+    try:
+        initialize_database(connection)
+    except BaseException:
+        connection.close()
+        raise
     return connection

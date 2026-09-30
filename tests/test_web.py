@@ -2,6 +2,7 @@
 
 from base64 import b64encode
 from pathlib import Path
+import re
 import sys
 import tempfile
 from threading import Thread
@@ -330,7 +331,7 @@ class WebTests(unittest.TestCase):
             0,
             self.database,
             auth_user="equipe",
-            auth_password="secret",
+            auth_password="sécret",
         )
         thread = Thread(target=server.serve_forever, daemon=True)
         thread.start()
@@ -340,7 +341,7 @@ class WebTests(unittest.TestCase):
                 urlopen(url)
             self.assertEqual(context.exception.code, 401)
 
-            credentials = b64encode(b"equipe:secret").decode("ascii")
+            credentials = b64encode("equipe:sécret".encode("utf-8")).decode("ascii")
             request = Request(
                 url,
                 headers={"Authorization": f"Basic {credentials}"},
@@ -349,6 +350,8 @@ class WebTests(unittest.TestCase):
                 self.assertEqual(response.status, 200)
                 page = response.read().decode("utf-8")
                 self.assertIn('name="_csrf"', page)
+                cookie = response.headers["Set-Cookie"].split(";", 1)[0]
+                csrf = re.search(r'name="_csrf" value="([^"]+)"', page).group(1)
 
             request = Request(
                 url,
@@ -359,10 +362,41 @@ class WebTests(unittest.TestCase):
             with self.assertRaises(HTTPError) as context:
                 urlopen(request)
             self.assertEqual(context.exception.code, 403)
+
+            request = Request(
+                url + "categories",
+                data=urlencode({"name": "Frais", "_csrf": csrf}).encode("utf-8"),
+                headers={
+                    "Authorization": f"Basic {credentials}",
+                    "Cookie": cookie,
+                },
+                method="POST",
+            )
+            with urlopen(request) as response:
+                self.assertIn("Catégorie créée.", response.read().decode("utf-8"))
         finally:
             server.shutdown()
             thread.join(timeout=5)
             server.server_close()
+
+    def test_invalid_post_bodies_return_http_errors(self) -> None:
+        cases = (
+            (b"\xff", {}, 400),
+            (b"", {"Content-Length": "-1"}, 400),
+            (b"", {"Content-Length": "65537"}, 413),
+            (b"&".join([b"field=value"] * 51), {}, 400),
+        )
+        for body, headers, expected_status in cases:
+            with self.subTest(headers=headers, expected_status=expected_status):
+                request = Request(
+                    self.base_url + "/products", data=body,
+                    headers=headers, method="POST",
+                )
+                with self.assertRaises(HTTPError) as context:
+                    urlopen(request, timeout=3)
+                self.assertEqual(context.exception.code, expected_status)
+                context.exception.close()
+        self.assertIn("Aucun produit enregistré", self.get("/products"))
 
 
 if __name__ == "__main__":

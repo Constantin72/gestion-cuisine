@@ -7,7 +7,7 @@ ne touche pas les règles métier.
 
 from datetime import date
 import html
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
 from .application import AlertBatch, ProductStock, StockApplication
 from .formatting import (
@@ -15,9 +15,10 @@ from .formatting import (
     format_price,
     format_quantity,
     movement_label,
+    product_sort_key,
     sort_text,
 )
-from .models import Batch, Product, cents_to_euros
+from .models import Batch, Product, StockMovement, cents_to_euros
 from .repository import Repository
 from .services import batch_value_cents
 
@@ -177,7 +178,7 @@ def _page(
       </nav>
     </header>
     <main>{flash}{content}</main>
-    <footer>Cuisine 4H · données conservées localement dans SQLite</footer>
+    <footer>Cuisine 4H · gestion des stocks de cuisine</footer>
   </div>
 </body>
 </html>"""
@@ -196,7 +197,6 @@ def _heading(title: str, subtitle: str = "", actions: str = "") -> str:
 
 def _products_table(
     lines: List[ProductStock],
-    compact: bool = False,
     repository: Optional[Repository] = None,
 ) -> str:
     if not lines:
@@ -207,9 +207,7 @@ def _products_table(
             batch.product_id for batch in repository.list_batches()
         }
     rows = []
-    category_colspan = 4 + (0 if compact else 2)
-    if repository is not None and not compact:
-        category_colspan += 1
+    category_colspan = 6 if repository is None else 7
     last_category = None
     for line in lines:
         product = line.product
@@ -247,16 +245,17 @@ def _products_table(
             f"<td><strong>{_escape(product.name)}</strong><br><span class=\"muted\">{_escape(product.category)}</span></td>"
             f"<td class=\"number\">{_escape(format_quantity(line.quantity))} {_escape(product.unit)}</td>"
             f"<td class=\"number\">{_escape(format_price(line.value_cents))}</td>"
-            + (f'<td class="number">{_escape(format_quantity(product.min_stock_threshold))}</td>' if not compact else "")
-            + (f"<td>{status}</td>" if not compact else "")
-            + (f"<td>{action}</td>" if repository is not None and not compact else "")
+            f'<td class="number">{_escape(format_quantity(product.min_stock_threshold))}</td>'
+            f"<td>{status}</td>"
+            + (f"<td>{action}</td>" if repository is not None else "")
             + "</tr>"
         )
-    headers = "<th>ID</th><th>Produit</th><th>Stock</th><th>Valeur</th>"
-    if not compact:
-        headers += "<th>Seuil</th><th>État</th>"
-        if repository is not None:
-            headers += "<th>Action</th>"
+    headers = (
+        "<th>ID</th><th>Produit</th><th>Stock</th><th>Valeur</th>"
+        "<th>Seuil</th><th>État</th>"
+    )
+    if repository is not None:
+        headers += "<th>Action</th>"
     return f'<table><thead><tr>{headers}</tr></thead><tbody>{"".join(rows)}</tbody></table>'
 
 
@@ -421,14 +420,7 @@ def _batch_rows(
 def _batch_form(products: List[Product]) -> str:
     if not products:
         return '<p class="notice">Créez d’abord un produit avant d’ajouter un lot.</p>'
-    sorted_products = sorted(
-        products,
-        key=lambda product: (
-            sort_text(product.category),
-            sort_text(product.name),
-            product.id or 0,
-        ),
-    )
+    sorted_products = sorted(products, key=product_sort_key)
     options = []
     current_category = None
     for product in sorted_products:
@@ -470,7 +462,7 @@ def _batch_edit_form(repository: Repository, batch: Batch) -> str:
   <label>Date d’expiration <input name="expiry_date" type="date" value="{_escape("" if batch.expiry_date is None else batch.expiry_date.isoformat())}"></label>
   <label>Fournisseur <input name="supplier" value="{_escape(supplier)}"></label>
   <label>Notes <textarea name="notes" rows="4">{_escape(notes)}</textarea></label>
-  <p class="notice">La quantité se modifie depuis l’historique des mouvements, afin de préserver les comptes.</p>
+  <p class="notice">Pour ajuster la quantité, utilisez Inventaire dans la page Lots ou enregistrez un mouvement depuis le tableau de bord.</p>
   <div class="actions">
     <a class="button ghost" href="/batches">Annuler</a>
     <button type="submit">Enregistrer les modifications</button>
@@ -523,8 +515,14 @@ def inventory_page(repository: Repository, batch_id: int) -> str:
     return content
 
 
-def _movements_table(repository: Repository, batch_id: Optional[int] = None, limit: int = 100) -> str:
-    movements = repository.list_movements(batch_id=batch_id, limit=limit)
+def _movements_table(
+    repository: Repository,
+    batch_id: Optional[int] = None,
+    limit: int = 100,
+    movements: Optional[Sequence[StockMovement]] = None,
+) -> str:
+    if movements is None:
+        movements = repository.list_movements(batch_id=batch_id, limit=limit)
     if not movements:
         return '<p class="empty">Aucun mouvement enregistré.</p>'
     batches = {batch.id: batch for batch in repository.list_batches()}
@@ -592,7 +590,7 @@ def dashboard(repository: Repository) -> str:
     actions = '<a class="button ghost" href="/export/stock.csv">Exporter le stock</a>'
     content = _heading(
         "Tableau de bord",
-        f"Vue du {snapshot.reference_date.isoformat()} · les actions restent locales.",
+        f"État du stock au {snapshot.reference_date.isoformat()}.",
         actions,
     )
     content += (
@@ -607,7 +605,7 @@ def dashboard(repository: Repository) -> str:
     content += '<section class="section"><div class="section-heading"><h3>État des produits</h3><a href="/products">Gérer les produits →</a></div>'
     content += _products_table(list(snapshot.products)) + '</section>'
     content += '<section class="section"><div class="section-heading"><h3>Derniers mouvements</h3><a href="/movements">Voir l’historique →</a></div>'
-    content += _movements_table(repository, limit=10) + '</section>'
+    content += _movements_table(repository, movements=snapshot.latest_movements) + '</section>'
     active_batches = repository.list_batches_in_stock()
     if active_batches:
         rows = "".join(

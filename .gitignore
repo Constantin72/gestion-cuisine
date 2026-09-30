@@ -3,11 +3,11 @@ __pycache__/
 *.egg-info/
 .venv/
 .idea/
-donnees/*.db
-donnees/*.db-*
+*.db
+*.db-*
 
 .env
-stock.db
 *.sqlite
 *.sqlite3
-backup-*.db
+*.sqlite-*
+*.sqlite3-*

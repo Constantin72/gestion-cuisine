@@ -1,4 +1,4 @@
-"""Règles métier indépendantes du stockage SQLite."""
+"""Calculs de stock et de dates limites à partir des données du repository."""
 
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -35,13 +35,14 @@ def is_batch_expired(
 ) -> bool:
     """Indique si la date limite est antérieure à la date donnée."""
 
-    if isinstance(today, datetime) or not isinstance(today, date):
+    if today is None:
         raise TypeError("La date de référence doit être une date Python.")
+    reference = validated_reference_date(today)
     effective_expiry = calculate_effective_expiry(product, batch)
-    return effective_expiry is not None and effective_expiry < today
+    return effective_expiry is not None and effective_expiry < reference
 
 
-def _reference_date(today: Optional[date]) -> date:
+def validated_reference_date(today: Optional[date]) -> date:
     """Valide ou crée la date de référence métier."""
 
     reference = date.today() if today is None else today
@@ -50,7 +51,7 @@ def _reference_date(today: Optional[date]) -> date:
     return reference
 
 
-def _validate_days(days: int) -> int:
+def validated_days(days: int) -> int:
     """Valide un nombre de jours non négatif."""
 
     if isinstance(days, bool) or not isinstance(days, int) or days < 0:
@@ -85,6 +86,39 @@ class StockSnapshot:
     totals: Dict[int, float]
     values_cents: Dict[int, int]
 
+    def products_below_minimum(self) -> List[Product]:
+        """Retourne les produits sous leur seuil, y compris ceux sans lot."""
+
+        return [
+            product
+            for product in self.products
+            if product.id is not None
+            and self.totals.get(product.id, 0.0) < product.min_stock_threshold
+        ]
+
+    def classify_expiry(
+        self, today: Optional[date] = None, days: int = 0
+    ) -> Tuple[List[Batch], List[Batch]]:
+        """Classe les lots périmés et ceux à échéance dans la fenêtre donnée."""
+
+        reference = validated_reference_date(today)
+        deadline = reference + timedelta(days=validated_days(days))
+        products = {product.id: product for product in self.products}
+        expired = []
+        expiring = []
+        for batch in self.batches:
+            product = products.get(batch.product_id)
+            if product is None:
+                continue
+            expiry = calculate_effective_expiry(product, batch)
+            if expiry is None:
+                continue
+            if expiry < reference:
+                expired.append(batch)
+            elif expiry <= deadline:
+                expiring.append(batch)
+        return expired, expiring
+
 
 class StockService:
     """Expose les règles métier liées aux stocks et aux dates limites."""
@@ -95,8 +129,9 @@ class StockService:
     def stock_snapshot(self) -> StockSnapshot:
         """Charge une seule fois les produits, les lots actifs et leurs totaux."""
 
-        products = tuple(self.repository.list_products())
-        batches = tuple(self.repository.list_batches_in_stock())
+        with self.repository.read_snapshot():
+            products = tuple(self.repository.list_products())
+            batches = tuple(self.repository.list_batches_in_stock())
         totals = {
             product.id: Decimal("0")
             for product in products
@@ -136,32 +171,12 @@ class StockService:
     def products_below_minimum(self) -> List[Product]:
         """Retourne les produits sous leur seuil minimal."""
 
-        snapshot = self.stock_snapshot()
-        products = []
-        for product in snapshot.products:
-            if product.id is None:
-                continue
-            total = Decimal(str(snapshot.totals.get(product.id, 0.0)))
-            threshold = Decimal(str(product.min_stock_threshold))
-            if total < threshold:
-                products.append(product)
-        return products
+        return self.stock_snapshot().products_below_minimum()
 
     def expired_batches(self, today: Optional[date] = None) -> List[Batch]:
         """Retourne les lots en stock dont la date limite est dépassée."""
 
-        reference = _reference_date(today)
-        snapshot = self.stock_snapshot()
-        products = {
-            product.id: product
-            for product in snapshot.products
-            if product.id is not None
-        }
-        expired = []
-        for batch in snapshot.batches:
-            product = products.get(batch.product_id)
-            if product is not None and is_batch_expired(product, batch, reference):
-                expired.append(batch)
+        expired, _ = self.stock_snapshot().classify_expiry(today)
         return expired
 
     def batches_expiring_within(
@@ -169,24 +184,5 @@ class StockService:
     ) -> List[Batch]:
         """Retourne les lots en stock arrivant à échéance prochainement."""
 
-        number_of_days = _validate_days(days)
-        reference = _reference_date(today)
-        deadline = reference + timedelta(days=number_of_days)
-        snapshot = self.stock_snapshot()
-        products = {
-            product.id: product
-            for product in snapshot.products
-            if product.id is not None
-        }
-        expiring = []
-        for batch in snapshot.batches:
-            product = products.get(batch.product_id)
-            if product is None:
-                continue
-            effective_expiry = calculate_effective_expiry(product, batch)
-            if (
-                effective_expiry is not None
-                and reference <= effective_expiry <= deadline
-            ):
-                expiring.append(batch)
+        _, expiring = self.stock_snapshot().classify_expiry(today, days)
         return expiring
