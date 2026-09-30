@@ -14,6 +14,7 @@ import hmac
 import os
 import re
 import secrets
+import socket
 import sqlite3
 from http.cookies import CookieError, SimpleCookie
 from typing import Mapping, Optional, Sequence
@@ -467,6 +468,12 @@ class StockHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
 
 
+class StockIPv6HTTPServer(StockHTTPServer):
+    """Variante IPv6 utilisée par les hébergeurs comme Alwaysdata."""
+
+    address_family = socket.AF_INET6
+
+
 def create_server(
     host: str = "127.0.0.1",
     port: int = 8000,
@@ -504,7 +511,8 @@ def create_server(
         auth_user = configured_user
         auth_password = configured_password
 
-    return StockHTTPServer((host, port), ConfiguredStockRequestHandler)
+    server_class = StockIPv6HTTPServer if ":" in host else StockHTTPServer
+    return server_class((host, port), ConfiguredStockRequestHandler)
 
 
 def serve(
