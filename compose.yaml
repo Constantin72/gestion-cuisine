@@ -1,0 +1,31 @@
+services:
+  stock-cuisine:
+    build: .
+    restart: unless-stopped
+    environment:
+      STOCK_CUISINE_AUTH_USER: ${STOCK_CUISINE_AUTH_USER:?Définir STOCK_CUISINE_AUTH_USER dans .env}
+      STOCK_CUISINE_AUTH_PASSWORD: ${STOCK_CUISINE_AUTH_PASSWORD:?Définir STOCK_CUISINE_AUTH_PASSWORD dans .env}
+    expose:
+      - "8000"
+    volumes:
+      - stock_cuisine_data:/data
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - stock-cuisine
+    environment:
+      STOCK_CUISINE_DOMAIN: ${STOCK_CUISINE_DOMAIN:?Définir STOCK_CUISINE_DOMAIN dans .env}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  stock_cuisine_data:
+  caddy_data:
+  caddy_config:

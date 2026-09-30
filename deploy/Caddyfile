@@ -1,0 +1,3 @@
+{$STOCK_CUISINE_DOMAIN} {
+    reverse_proxy stock-cuisine:8000
+}
