@@ -22,6 +22,7 @@ class ProductStock:
     product: Product
     quantity: float
     below_minimum: bool
+    value_cents: int = 0
 
 
 @dataclass(frozen=True)
@@ -54,6 +55,7 @@ class Dashboard:
     below_minimum: int
     expired: int
     latest_movements: Tuple[StockMovement, ...]
+    total_value_cents: int = 0
 
 
 def _validated_date(value: Optional[date]) -> date:
@@ -100,6 +102,9 @@ class StockApplication:
                     product=product,
                     quantity=quantity,
                     below_minimum=quantity < product.min_stock_threshold,
+                    value_cents=0
+                    if product_id is None
+                    else snapshot.values_cents.get(product_id, 0),
                 )
             )
         return result
@@ -154,6 +159,7 @@ class StockApplication:
             below_minimum=sum(1 for line in stock if line.below_minimum),
             expired=len(expired),
             latest_movements=tuple(self.repository.list_movements(limit=10)),
+            total_value_cents=sum(line.value_cents for line in stock),
         )
 
     def alerts(self, days: int = 7, reference_date: Optional[date] = None) -> AlertReport:

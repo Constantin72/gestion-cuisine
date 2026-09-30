@@ -81,6 +81,7 @@ class WebTests(unittest.TestCase):
             },
         )
         self.assertIn("Lot créé.", page)
+        self.assertIn("3.75 €", page)
 
         page = self.post(
             "/movements",
@@ -94,6 +95,7 @@ class WebTests(unittest.TestCase):
         )
         self.assertIn("Mouvement enregistré.", page)
         self.assertIn("2 L", page)
+        self.assertIn("2.50 €", page)
 
         page = self.post("/batches/open", {"batch_id": "1"})
         self.assertIn("Lot ouvert.", page)

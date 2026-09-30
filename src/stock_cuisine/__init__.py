@@ -23,6 +23,7 @@ from .models import (
 from .repository import Repository
 from .services import (
     StockService,
+    batch_value_cents,
     calculate_effective_expiry,
     is_batch_expired,
 )
@@ -40,6 +41,7 @@ __all__ = [
     "StockService",
     "StockMovement",
     "backup_database",
+    "batch_value_cents",
     "calculate_effective_expiry",
     "cents_to_euros",
     "connect_database",

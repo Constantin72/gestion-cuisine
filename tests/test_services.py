@@ -127,6 +127,33 @@ class ServiceTests(unittest.TestCase):
         self.assertAlmostEqual(totals[second_product.id], 0.0)
         self.assertEqual(first_batch.quantity, 0.3)
 
+    def test_stock_value_uses_remaining_quantity_and_each_lot_price(self) -> None:
+        product = self.repository.create_product(self.product("Farine"))
+        first_batch = self.repository.create_batch(
+            Batch(
+                product_id=product.id,
+                quantity=3.0,
+                unit_price_cents=125,
+                purchase_date=REFERENCE_DATE,
+            )
+        )
+        self.repository.create_batch(
+            Batch(
+                product_id=product.id,
+                quantity=2.0,
+                unit_price_cents=200,
+                purchase_date=REFERENCE_DATE,
+            )
+        )
+        self.repository.record_movement(
+            self._movement(first_batch.id, "out", 1.0)
+        )
+
+        snapshot = self.service.stock_snapshot()
+
+        self.assertAlmostEqual(snapshot.totals[product.id], 4.0)
+        self.assertEqual(snapshot.values_cents[product.id], 650)
+
     def test_products_below_minimum_include_products_without_lots(self) -> None:
         low_product = self.repository.create_product(
             self.product("Lentilles", threshold=2.0)

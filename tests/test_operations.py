@@ -40,7 +40,11 @@ class OperationsTests(unittest.TestCase):
             date(2026, 9, 29)
         )
         self.assertEqual(dashboard.products[0].quantity, 3.0)
-        self.assertIn("3,L,2,ok", csv_text(self.repository, "stock"))
+        self.assertEqual(dashboard.products[0].value_cents, 375)
+        self.assertEqual(dashboard.total_value_cents, 375)
+        self.assertIn("3,L,2,ok,375", csv_text(self.repository, "stock"))
+        self.assertIn("valeur_stock_centimes", csv_text(self.repository, "stock"))
+        self.assertIn("valeur_stock_centimes", csv_text(self.repository, "batches"))
         self.assertIn(",0\r\n", csv_text(self.repository, "products"))
 
     def test_write_csv_creates_parent_directory(self) -> None:

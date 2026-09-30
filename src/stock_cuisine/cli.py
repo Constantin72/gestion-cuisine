@@ -218,15 +218,18 @@ def _handle_movement_list(repository: Repository, args: argparse.Namespace) -> N
 
 def _handle_stock_list(repository: Repository, args: argparse.Namespace) -> None:
     service = StockService(repository)
-    totals = service.total_stock_by_product()
+    snapshot = service.stock_snapshot()
+    totals = snapshot.totals
+    values = snapshot.values_cents
     _print_table(
-        ("ID", "Produit", "Stock", "Unité", "Seuil", "État"),
+        ("ID", "Produit", "Stock", "Unité", "Valeur", "Seuil", "État"),
         (
             (
                 product.id,
                 product.name,
                 _format_quantity(totals.get(product.id, 0.0)),
                 product.unit,
+                _format_price(values.get(product.id, 0)),
                 _format_quantity(product.min_stock_threshold),
                 "SOUS SEUIL"
                 if product.id is not None

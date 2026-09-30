@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Dict, List, Optional, Tuple
 
 from .models import Batch, Product
@@ -64,6 +64,18 @@ def _round_stock(value: Decimal) -> float:
     return float(value.quantize(Decimal("0.001")))
 
 
+def batch_value_cents(batch: Batch) -> int:
+    """Calcule la valeur courante d'un lot en centimes.
+
+    La quantité peut être fractionnaire (kg, litres, etc.) alors que le prix
+    est conservé en centimes. Le résultat est donc arrondi au centime le plus
+    proche, avec un arrondi commercial.
+    """
+
+    value = Decimal(str(batch.quantity)) * Decimal(batch.unit_price_cents)
+    return int(value.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+
+
 @dataclass(frozen=True)
 class StockSnapshot:
     """Jeu de données cohérent utilisé pour construire les vues de stock."""
@@ -71,6 +83,7 @@ class StockSnapshot:
     products: Tuple[Product, ...]
     batches: Tuple[Batch, ...]
     totals: Dict[int, float]
+    values_cents: Dict[int, int]
 
 
 class StockService:
@@ -89,9 +102,17 @@ class StockService:
             for product in products
             if product.id is not None
         }
+        values_cents = {
+            product.id: 0
+            for product in products
+            if product.id is not None
+        }
         for batch in batches:
             current = totals.get(batch.product_id, Decimal("0"))
             totals[batch.product_id] = current + Decimal(str(batch.quantity))
+            values_cents[batch.product_id] = (
+                values_cents.get(batch.product_id, 0) + batch_value_cents(batch)
+            )
         return StockSnapshot(
             products=products,
             batches=batches,
@@ -99,12 +120,18 @@ class StockService:
                 product_id: _round_stock(total)
                 for product_id, total in totals.items()
             },
+            values_cents=values_cents,
         )
 
     def total_stock_by_product(self) -> Dict[int, float]:
         """Retourne la quantité totale de chaque produit."""
 
         return self.stock_snapshot().totals
+
+    def total_stock_value_by_product(self) -> Dict[int, int]:
+        """Retourne la valeur courante de chaque produit en centimes."""
+
+        return self.stock_snapshot().values_cents
 
     def products_below_minimum(self) -> List[Product]:
         """Retourne les produits sous leur seuil minimal."""

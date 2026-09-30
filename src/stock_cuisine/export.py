@@ -8,6 +8,7 @@ from typing import IO, Optional, Union
 from .application import StockApplication
 from .formatting import format_date, format_quantity
 from .repository import Repository
+from .services import batch_value_cents
 
 
 ExportTarget = Union[str, Path, IO[str]]
@@ -41,7 +42,16 @@ def _csv_rows(repository: Repository, kind: str):
         return
 
     if kind == "stock":
-        yield ("produit_id", "produit", "categorie", "stock", "unite", "seuil", "etat")
+        yield (
+            "produit_id",
+            "produit",
+            "categorie",
+            "stock",
+            "unite",
+            "seuil",
+            "etat",
+            "valeur_stock_centimes",
+        )
         for line in StockApplication(repository).product_stock():
             yield (
                 line.product.id,
@@ -51,6 +61,7 @@ def _csv_rows(repository: Repository, kind: str):
                 line.product.unit,
                 format_quantity(line.product.min_stock_threshold),
                 "sous_seuil" if line.below_minimum else "ok",
+                line.value_cents,
             )
         return
 
@@ -64,6 +75,7 @@ def _csv_rows(repository: Repository, kind: str):
             "produit",
             "quantite",
             "prix_unitaire_centimes",
+            "valeur_stock_centimes",
             "date_achat",
             "date_expiration",
             "date_ouverture",
@@ -77,6 +89,7 @@ def _csv_rows(repository: Repository, kind: str):
                 product_names.get(batch.product_id, ""),
                 format_quantity(batch.quantity),
                 batch.unit_price_cents,
+                batch_value_cents(batch),
                 format_date(batch.purchase_date),
                 format_date(batch.expiry_date),
                 format_date(batch.opened_date),

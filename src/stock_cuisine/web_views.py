@@ -13,6 +13,7 @@ from .application import AlertBatch, ProductStock, StockApplication
 from .formatting import format_date, format_price, format_quantity, movement_label
 from .models import Batch, Product, cents_to_euros
 from .repository import Repository
+from .services import batch_value_cents
 
 
 STYLE = """
@@ -62,7 +63,7 @@ main { max-width: 1320px; margin: 0 auto; padding: clamp(1.25rem, 4vw, 2.75rem) 
 .page-heading h2 { margin: 0; font-size: clamp(1.55rem, 3vw, 2.1rem); letter-spacing: -.04em; }
 .page-heading p { margin: .35rem 0 0; color: var(--muted); }
 .actions { display: flex; flex-wrap: wrap; gap: .5rem; }
-.cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .9rem; margin-bottom: 1.4rem; }
+.cards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .9rem; margin-bottom: 1.4rem; }
 .card, .panel, table { background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); }
 .card { border-radius: .9rem; padding: 1.1rem 1.2rem; }
 .card strong { display: block; color: var(--brand); font-size: 2rem; line-height: 1; }
@@ -109,6 +110,7 @@ tr:last-child td { border-bottom: 0; }
 .inline button { margin: 0 0 0 .4rem; padding: .42rem .65rem; font-size: .85rem; }
 .empty { color: var(--muted); padding: 1.25rem; text-align: center; background: var(--surface-soft); border-radius: .7rem; }
 footer { max-width: 1320px; margin: 0 auto; padding: 0 2.5rem 2rem; color: var(--muted); font-size: .85rem; }
+@media (max-width: 1100px) { .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 980px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } .columns.three { grid-template-columns: 1fr; } }
 @media (max-width: 720px) { header { padding-inline: 1rem; } .columns { grid-template-columns: 1fr; } .page-heading { align-items: start; flex-direction: column; } main { padding-inline: 1rem; } footer { padding-inline: 1rem; } table { display: block; overflow-x: auto; } nav { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; } nav a { flex: 0 0 auto; } }
 """
@@ -226,12 +228,13 @@ def _products_table(
             f"<td>{_escape(product.id)}</td>"
             f"<td><strong>{_escape(product.name)}</strong><br><span class=\"muted\">{_escape(product.category)}</span></td>"
             f"<td class=\"number\">{_escape(format_quantity(line.quantity))} {_escape(product.unit)}</td>"
+            f"<td class=\"number\">{_escape(format_price(line.value_cents))}</td>"
             + (f'<td class="number">{_escape(format_quantity(product.min_stock_threshold))}</td>' if not compact else "")
             + (f"<td>{status}</td>" if not compact else "")
             + (f"<td>{action}</td>" if repository is not None and not compact else "")
             + "</tr>"
         )
-    headers = "<th>ID</th><th>Produit</th><th>Stock</th>"
+    headers = "<th>ID</th><th>Produit</th><th>Stock</th><th>Valeur</th>"
     if not compact:
         headers += "<th>Seuil</th><th>État</th>"
         if repository is not None:
@@ -360,6 +363,7 @@ def _batch_rows(
             f"<td><strong>{_escape(product_name)}</strong><br><span class=\"muted\">Produit #{_escape(batch.product_id)}</span></td>"
             f"<td class=\"number\">{_escape(format_quantity(batch.quantity))}</td>"
             f"<td>{_escape(format_price(batch.unit_price_cents))}</td>"
+            f"<td>{_escape(format_price(batch_value_cents(batch)))}</td>"
             f"<td>{_escape(format_date(batch.purchase_date))}</td>"
             f"<td>{_escape(format_date(batch.expiry_date))}</td>"
             f"<td>{_escape(format_date(batch.opened_date))} {action}</td>"
@@ -367,7 +371,7 @@ def _batch_rows(
         )
     return (
         "<table><thead><tr><th>ID</th><th>Produit</th><th>Stock</th>"
-        "<th>Prix</th><th>Achat</th><th>Expiration</th><th>Ouverture</th></tr></thead>"
+        "<th>Prix unitaire</th><th>Valeur</th><th>Achat</th><th>Expiration</th><th>Ouverture</th></tr></thead>"
         f'<tbody>{"".join(rows)}</tbody></table>'
     )
 
@@ -535,6 +539,7 @@ def dashboard(repository: Repository) -> str:
         '<div class="cards">'
         f'<div class="card"><strong>{_escape(len(snapshot.products))}</strong><span>produits suivis</span></div>'
         f'<div class="card"><strong>{_escape(snapshot.active_batches)}</strong><span>lots en stock</span></div>'
+        f'<div class="card"><strong>{_escape(format_price(snapshot.total_value_cents))}</strong><span>valeur du stock</span></div>'
         f'<div class="card"><strong>{_escape(snapshot.below_minimum)}</strong><span>sous le seuil</span></div>'
         f'<div class="card"><strong>{_escape(snapshot.expired)}</strong><span>lots périmés</span></div>'
         '</div>'

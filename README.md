@@ -77,6 +77,10 @@ Les boutons « Modifier » des pages Produits et Lots permettent de corriger les
 informations sans effacer l'historique. La quantité d'un lot continue de se
 modifier par les mouvements de stock.
 
+La valeur du stock est calculée automatiquement pour chaque lot à partir de la
+quantité restante et du prix unitaire, puis agrégée par produit et pour
+l'inventaire total.
+
 Depuis la page Lots, « Inventaire » permet de saisir la quantité réellement
 comptée. L'écart est enregistré automatiquement comme une entrée ou une perte.
 
@@ -107,6 +111,8 @@ un hébergeur Docker, un nom de domaine et un volume persistant pour `/data`.
 
 - Les quantités sont arrondies à trois décimales avec un arrondi décimal.
 - Les prix sont conservés en centimes entiers.
+- La valeur d'un lot est la quantité restante multipliée par son prix unitaire,
+  arrondie au centime.
 - Une date d’expiration ou d’ouverture ne peut pas précéder l’achat.
 - Un lot reste valable le jour exact de sa date limite et expire le lendemain.
 - Après ouverture, la durée de conservation du produit peut avancer la date limite.

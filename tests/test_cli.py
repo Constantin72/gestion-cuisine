@@ -78,6 +78,7 @@ class CliTests(unittest.TestCase):
         self.assertEqual((result, errors), (0, ""))
         self.assertIn("Lait", output)
         self.assertIn("2", output)
+        self.assertIn("2.50 €", output)
         self.assertIn("OK", output)
 
         result, output, errors = self.run_cli("alerts", "--date", "2026-09-29", "--days", "7")
