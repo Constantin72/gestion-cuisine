@@ -47,6 +47,18 @@ class OperationsTests(unittest.TestCase):
         self.assertIn("valeur_stock_centimes", csv_text(self.repository, "batches"))
         self.assertIn(",0\r\n", csv_text(self.repository, "products"))
 
+    def test_products_are_sorted_by_category_then_name(self) -> None:
+        self.repository.create_product(Product("Zeste", "kg", "Frais", 1.0))
+        self.repository.create_product(Product("Abricot", "kg", "Frais", 1.0))
+        self.repository.create_product(Product("Riz", "kg", "Épicerie", 1.0))
+
+        products = StockApplication(self.repository).product_stock()
+
+        self.assertEqual(
+            [line.product.name for line in products],
+            ["Riz", "Abricot", "Zeste"],
+        )
+
     def test_write_csv_creates_parent_directory(self) -> None:
         self.repository.create_product(Product("Riz", "kg", "Épicerie", 1.0))
         with tempfile.TemporaryDirectory() as directory:

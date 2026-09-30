@@ -97,6 +97,7 @@ tr:last-child td { border-bottom: 0; }
 .number { text-align: right; white-space: nowrap; }
 .status { display: inline-flex; align-items: center; gap: .35rem; font-weight: 700; white-space: nowrap; }
 .status::before { content: ""; width: .45rem; height: .45rem; border-radius: 50%; background: currentColor; }
+.category-row th { background: #dceee7; font-size: .9rem; letter-spacing: 0; text-transform: none; }
 .warning { color: var(--danger); }
 .ok { color: #2a7c52; }
 .muted { color: var(--muted); }
@@ -200,8 +201,19 @@ def _products_table(
             batch.product_id for batch in repository.list_batches()
         }
     rows = []
+    category_colspan = 4 + (0 if compact else 2)
+    if repository is not None and not compact:
+        category_colspan += 1
+    last_category = None
     for line in lines:
         product = line.product
+        if product.category != last_category:
+            rows.append(
+                '<tr class="category-row">'
+                f'<th colspan="{category_colspan}">{_escape(product.category)}</th>'
+                "</tr>"
+            )
+            last_category = product.category
         status = (
             '<span class="status warning">Sous seuil</span>'
             if line.below_minimum
