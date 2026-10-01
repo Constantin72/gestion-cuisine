@@ -13,7 +13,14 @@ from unittest.mock import patch
 SOURCE_DIRECTORY = Path(__file__).resolve().parents[1] / "src"
 sys.path.insert(0, str(SOURCE_DIRECTORY))
 
-from stock_cuisine import Batch, Product, Repository, StockApplication, connect_database
+from stock_cuisine import (
+    Batch,
+    Product,
+    Repository,
+    StockApplication,
+    StockMovement,
+    connect_database,
+)
 from stock_cuisine.backup import backup_database
 from stock_cuisine.export import csv_text, write_csv
 
@@ -49,6 +56,35 @@ class OperationsTests(unittest.TestCase):
         self.assertIn("valeur_stock_centimes", csv_text(self.repository, "stock"))
         self.assertIn("valeur_stock_centimes", csv_text(self.repository, "batches"))
         self.assertIn(",0\r\n", csv_text(self.repository, "products"))
+
+    def test_exhausted_products_are_hidden_from_stock_views(self) -> None:
+        exhausted = self.repository.create_product(
+            Product("Lait", "L", "Frais", 1.0)
+        )
+        batch = self.repository.create_batch(
+            Batch(exhausted.id, 1.0, 125, date(2026, 9, 29))
+        )
+        self.repository.record_movement(
+            StockMovement(
+                batch_id=batch.id,
+                type="out",
+                quantity=1.0,
+                date=date(2026, 9, 29),
+                reason="Déjeuner",
+            )
+        )
+        new_product = self.repository.create_product(
+            Product("Riz", "kg", "Épicerie", 1.0)
+        )
+
+        application = StockApplication(self.repository)
+        dashboard = application.dashboard(date(2026, 9, 29))
+
+        self.assertEqual(
+            [line.product.id for line in dashboard.products], [new_product.id]
+        )
+        self.assertEqual(application.product_stock(only_in_stock=True), [])
+        self.assertNotIn("Lait", csv_text(self.repository, "stock"))
 
     def test_products_are_sorted_by_category_then_name(self) -> None:
         self.repository.create_product(Product("Zeste", "kg", "Frais", 1.0))

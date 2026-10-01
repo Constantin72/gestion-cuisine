@@ -199,13 +199,19 @@ def _products_table(
     lines: List[ProductStock],
     repository: Optional[Repository] = None,
 ) -> str:
-    if not lines:
-        return '<p class="empty">Aucun produit enregistré.</p>'
     product_ids_with_batches = set()
     if repository is not None:
         product_ids_with_batches = {
             batch.product_id for batch in repository.list_batches()
         }
+        lines = [
+            line
+            for line in lines
+            if line.quantity > 0
+            or line.product.id not in product_ids_with_batches
+        ]
+    if not lines:
+        return '<p class="empty">Aucun produit enregistré.</p>'
     rows = []
     category_colspan = 6 if repository is None else 7
     last_category = None
@@ -550,9 +556,9 @@ def _movements_table(
 
 
 def _movement_form(repository: Repository) -> str:
-    batches = repository.list_batches()
+    batches = repository.list_batches_in_stock()
     if not batches:
-        return '<p class="notice">Ajoutez d’abord un lot avant d’enregistrer un mouvement.</p>'
+        return '<p class="notice">Ajoutez d’abord un lot en stock avant d’enregistrer un mouvement.</p>'
     products = {product.id: product for product in repository.list_products()}
     options = "".join(
         f'<option value="{_escape(batch.id)}">'

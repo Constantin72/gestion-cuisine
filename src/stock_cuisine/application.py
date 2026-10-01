@@ -73,7 +73,9 @@ class StockApplication:
 
     @staticmethod
     def _product_stock_from_snapshot(
-        snapshot: StockSnapshot, search: Optional[str] = None
+        snapshot: StockSnapshot,
+        search: Optional[str] = None,
+        only_in_stock: bool = False,
     ) -> List[ProductStock]:
         products = snapshot.products
         if search:
@@ -91,6 +93,8 @@ class StockApplication:
         for product in products:
             product_id = product.id
             quantity = 0.0 if product_id is None else snapshot.totals.get(product_id, 0.0)
+            if only_in_stock and quantity <= 0:
+                continue
             result.append(
                 ProductStock(
                     product=product,
@@ -103,11 +107,15 @@ class StockApplication:
             )
         return result
 
-    def product_stock(self, search: Optional[str] = None) -> List[ProductStock]:
-        """Retourne le stock de chaque produit, avec recherche facultative."""
+    def product_stock(
+        self,
+        search: Optional[str] = None,
+        only_in_stock: bool = False,
+    ) -> List[ProductStock]:
+        """Retourne le stock des produits, avec recherche et filtre facultatifs."""
 
         return self._product_stock_from_snapshot(
-            self.service.stock_snapshot(), search
+            self.service.stock_snapshot(), search, only_in_stock
         )
 
     def dashboard(self, reference_date: Optional[date] = None) -> Dashboard:
@@ -117,16 +125,25 @@ class StockApplication:
         with self.repository.read_snapshot():
             snapshot = self.service.stock_snapshot()
             latest_movements = tuple(self.repository.list_movements(limit=10))
-        stock = self._product_stock_from_snapshot(snapshot)
+            product_ids_with_batches = {
+                batch.product_id for batch in self.repository.list_batches()
+            }
+        all_stock = self._product_stock_from_snapshot(snapshot)
+        stock = [
+            line
+            for line in all_stock
+            if line.quantity > 0
+            or line.product.id not in product_ids_with_batches
+        ]
         expired, _ = snapshot.classify_expiry(today)
         return Dashboard(
             reference_date=today,
             products=tuple(stock),
             active_batches=len(snapshot.batches),
-            below_minimum=sum(1 for line in stock if line.below_minimum),
+            below_minimum=sum(1 for line in all_stock if line.below_minimum),
             expired=len(expired),
             latest_movements=latest_movements,
-            total_value_cents=sum(line.value_cents for line in stock),
+            total_value_cents=sum(line.value_cents for line in all_stock),
         )
 
     def alerts(self, days: int = 7, reference_date: Optional[date] = None) -> AlertReport:

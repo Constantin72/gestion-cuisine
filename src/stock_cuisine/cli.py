@@ -212,7 +212,7 @@ def _handle_movement_list(repository: Repository, args: argparse.Namespace) -> N
 
 
 def _handle_stock_list(repository: Repository, args: argparse.Namespace) -> None:
-    stock = StockApplication(repository).product_stock()
+    stock = StockApplication(repository).product_stock(only_in_stock=True)
     _print_table(
         ("ID", "Produit", "Stock", "Unité", "Valeur", "Seuil", "État"),
         (

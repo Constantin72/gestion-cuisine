@@ -54,9 +54,11 @@ produit et pour l'ensemble du stock.
 
 **Modifier** corrige les informations d'un produit ou d'un lot. Le produit associé
 à un lot est fixe. La quantité se change par mouvement ou inventaire, avec une
-trace dans l'historique. Un produit n'est supprimable que s'il n'a aucun lot,
-y compris épuisé. L'accès hébergé utilise un identifiant partagé : il n'y a pas
-encore de rôles ni d'attribution des mouvements à une personne.
+trace dans l'historique. Quand sa quantité totale atteint zéro, le produit
+n'apparaît plus dans les vues de stock ni dans le tableau des produits ; il reste
+conservé dans l'historique et les alertes. Un produit n'est supprimable que s'il
+n'a aucun lot, y compris épuisé. L'accès hébergé utilise un identifiant partagé :
+il n'y a pas encore de rôles ni d'attribution des mouvements à une personne.
 
 ## Commandes utiles
 

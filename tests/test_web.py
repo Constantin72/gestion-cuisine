@@ -135,6 +135,43 @@ class WebTests(unittest.TestCase):
         self.assertIn("Produit supprimé.", page)
         self.assertIn("Aucun produit enregistré", page)
 
+    def test_exhausted_product_disappears_from_stock_views(self) -> None:
+        self.post(
+            "/products",
+            {
+                "name": "Riz",
+                "unit": "kg",
+                "category": "Épicerie",
+                "minimum": "1",
+            },
+        )
+        self.post(
+            "/batches",
+            {
+                "product_id": "1",
+                "quantity": "1",
+                "unit_price": "2",
+                "purchase_date": "2026-09-29",
+            },
+        )
+        self.post(
+            "/movements",
+            {
+                "batch_id": "1",
+                "movement_type": "out",
+                "quantity": "1",
+                "movement_date": "2026-09-29",
+                "reason": "Déjeuner",
+            },
+        )
+
+        dashboard = self.get("/")
+        self.assertNotIn("<strong>Riz</strong>", dashboard)
+        self.assertNotIn("Riz</option>", dashboard)
+
+        products = self.get("/products")
+        self.assertNotIn("<strong>Riz</strong>", products)
+
     def test_categories_can_be_added_and_used_for_products(self) -> None:
         page = self.get("/categories")
         self.assertIn("Aucune catégorie enregistrée", page)

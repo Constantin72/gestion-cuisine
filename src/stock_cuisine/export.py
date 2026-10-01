@@ -51,7 +51,7 @@ def _csv_rows(repository: Repository, kind: str) -> Iterator[Tuple[object, ...]]
             "etat",
             "valeur_stock_centimes",
         )
-        for line in StockApplication(repository).product_stock():
+        for line in StockApplication(repository).product_stock(only_in_stock=True):
             yield (
                 line.product.id,
                 line.product.name,
