@@ -14,6 +14,7 @@ récupérable, utilisable localement ou sur un hébergeur.
 - [x] Valeur du stock selon les quantités restantes et le prix de chaque lot.
 - [x] Tri par catégorie et nom dans les produits, lots et choix d'un produit.
 - [x] Interface web, commande terminal et exports CSV.
+- [x] Page d'inventaire globale, regroupée par produit, avec comptage atomique.
 - [x] Sauvegarde par l'API SQLite et migration du schéma v1 vers v2.
 - [x] Accès web partagé protégé par authentification et contrôle des formulaires.
 - [x] Documentation Alwaysdata et alternative Docker/Caddy.

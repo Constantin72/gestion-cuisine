@@ -43,9 +43,15 @@ le code ; l'hébergeur exécute le serveur et conserve la base partagée.
 3. Dans **Lots**, ajouter quantité, prix unitaire, dates et fournisseur. Le menu
    des produits et la liste des lots sont classés par catégorie puis nom.
 4. Depuis le **Tableau de bord**, enregistrer une entrée, une sortie ou une perte.
-5. Dans **Lots**, utiliser **Ouvrir** pour dater la première ouverture et
-   **Inventaire** pour saisir la quantité réellement comptée.
+5. Dans **Inventaire**, saisir les quantités réellement comptées pour les lots
+   concernés, puis enregistrer le comptage en une seule fois. La page **Lots**
+   conserve aussi l'action d'inventaire individuel pour une correction ponctuelle.
 6. Consulter **Historique** et **Alertes** pour suivre changements et échéances.
+
+La page **Inventaire** regroupe les lots actifs par catégorie et produit. Le
+stock théorique sert de repère, tandis qu'une ligne laissée vide n'est pas
+enregistrée. Chaque écart est ajouté à l'historique comme une entrée ou une
+perte ; l'enregistrement du comptage est atomique.
 
 Le prix d'un lot est le prix **par unité du produit**, pas le total de l'achat.
 Ainsi, 3 kg à 2,50 €/kg valent 7,50 €. Après une sortie de 1 kg, la valeur restante

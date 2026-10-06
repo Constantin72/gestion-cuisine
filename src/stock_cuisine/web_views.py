@@ -20,7 +20,7 @@ from .formatting import (
 )
 from .models import Batch, Product, StockMovement, cents_to_euros
 from .repository import Repository
-from .services import batch_value_cents
+from .services import batch_value_cents, calculate_effective_expiry
 
 
 STYLE = """
@@ -64,6 +64,8 @@ nav { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: 1.1rem; padding-to
 nav a { display: inline-flex; align-items: center; gap: .42rem; color: #e9fff7; text-decoration: none; padding: .52rem .75rem; border: 1px solid transparent; border-radius: .65rem; font-size: .92rem; font-weight: 650; white-space: nowrap; transition: background .15s ease, border-color .15s ease, transform .15s ease; }
 nav a:hover, nav a:focus { background: rgba(255,255,255,.13); border-color: rgba(255,255,255,.18); transform: translateY(-1px); }
 nav a.active { background: white; color: var(--brand-dark); box-shadow: 0 4px 12px rgba(0, 0, 0, .12); }
+nav a.nav-featured { background: var(--accent); color: var(--brand-dark); }
+nav a.nav-featured:hover, nav a.nav-featured:focus { background: #ffd477; }
 .nav-icon { width: 1.15rem; text-align: center; font-size: 1rem; }
 main { max-width: 1320px; margin: 0 auto; padding: clamp(1.25rem, 4vw, 2.75rem) clamp(1rem, 4vw, 2.5rem) 3rem; }
 .page-heading { display: flex; justify-content: space-between; align-items: end; gap: 1rem; margin-bottom: 1.35rem; }
@@ -73,6 +75,9 @@ main { max-width: 1320px; margin: 0 auto; padding: clamp(1.25rem, 4vw, 2.75rem) 
 .cards { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .9rem; margin-bottom: 1.4rem; }
 .card, .panel, table { background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); }
 .card { border-radius: .9rem; padding: 1.1rem 1.2rem; }
+.card-link { display: block; color: inherit; text-decoration: none; transition: transform .15s ease, box-shadow .15s ease; }
+.card-link:hover, .card-link:focus { transform: translateY(-2px); box-shadow: 0 15px 30px rgba(20, 61, 51, .14); }
+.card-link .card { height: 100%; }
 .card strong { display: block; color: var(--brand); font-size: 2rem; line-height: 1; }
 .card span { display: block; margin-top: .55rem; color: var(--muted); font-size: .9rem; }
 .columns { display: grid; grid-template-columns: minmax(260px, .8fr) minmax(0, 1.7fr); gap: 1rem; align-items: start; }
@@ -97,6 +102,35 @@ button.danger:hover { background: #843128; }
 .filter { display: flex; flex-wrap: wrap; align-items: end; gap: .65rem; padding: .85rem; margin-bottom: 1rem; border-radius: .75rem; background: var(--surface-soft); border: 1px solid var(--line); }
 .filter label { flex: 1 1 220px; margin: 0; }
 .filter button { margin-top: 0; }
+.inventory-form { display: grid; gap: 1rem; }
+.inventory-toolbar { display: grid; grid-template-columns: minmax(180px, .7fr) minmax(220px, 1fr) minmax(220px, 1.2fr); gap: .8rem; align-items: end; }
+.inventory-toolbar label { margin: 0; }
+.inventory-help { margin: 0; color: var(--muted); font-size: .9rem; align-self: center; }
+.inventory-table { table-layout: fixed; }
+.inventory-table th, .inventory-table td { vertical-align: middle; }
+.inventory-table th:nth-child(1) { width: 23%; }
+.inventory-table th:nth-child(2) { width: 12%; }
+.inventory-table th:nth-child(3), .inventory-table th:nth-child(4), .inventory-table th:nth-child(5) { width: 14%; }
+.inventory-table th:nth-child(6) { width: 17%; }
+.inventory-table .number { text-align: right; }
+.inventory-product-row th { background: #f5faf7; color: var(--ink); text-transform: none; letter-spacing: 0; font-size: .98rem; }
+.inventory-product { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
+.inventory-product-total { color: var(--muted); font-size: .85rem; font-weight: 500; }
+.inventory-count-input { width: 8rem; margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.inventory-table .delta { font-weight: 750; white-space: nowrap; }
+.inventory-table tr.counted { background: #fbfffc; }
+.inventory-table tr.counted .inventory-count-input { border-color: #73b58e; background: #f1fbf4; }
+.delta-positive { color: #2a7c52; }
+.delta-negative { color: var(--danger); }
+.delta-zero { color: var(--muted); }
+.inventory-footer { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.inventory-footer p { margin: 0; color: var(--muted); }
+.inventory-footer button { margin-top: 0; }
+.inventory-empty { padding: 2rem; text-align: center; }
+.inventory-empty h3 { margin-top: 0; }
+.quick-actions { display: flex; flex-wrap: wrap; gap: .6rem; }
+.quick-actions .button { margin-top: 0; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 table { width: 100%; border-collapse: collapse; border-radius: .85rem; overflow: hidden; }
 th, td { padding: .75rem .8rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
 th { background: #e8f3ee; color: var(--brand-dark); font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; }
@@ -119,8 +153,36 @@ tr:last-child td { border-bottom: 0; }
 .empty { color: var(--muted); padding: 1.25rem; text-align: center; background: var(--surface-soft); border-radius: .7rem; }
 footer { max-width: 1320px; margin: 0 auto; padding: 0 2.5rem 2rem; color: var(--muted); font-size: .85rem; }
 @media (max-width: 1100px) { .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-@media (max-width: 980px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } .columns.three { grid-template-columns: 1fr; } }
-@media (max-width: 720px) { header { padding-inline: 1rem; } .columns { grid-template-columns: 1fr; } .page-heading { align-items: start; flex-direction: column; } main { padding-inline: 1rem; } footer { padding-inline: 1rem; } table { display: block; overflow-x: auto; } nav { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; } nav a { flex: 0 0 auto; } }
+@media (max-width: 980px) { .cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } .columns.three { grid-template-columns: 1fr; } .inventory-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); } .inventory-help { grid-column: 1 / -1; } }
+@media (max-width: 720px) {
+  header { padding-inline: 1rem; }
+  .columns { grid-template-columns: 1fr; }
+  .page-heading { align-items: start; flex-direction: column; }
+  main { padding-inline: 1rem; }
+  footer { padding-inline: 1rem; }
+  table { display: block; overflow-x: auto; }
+  nav { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+  nav a { flex: 0 0 auto; }
+  .inventory-toolbar { grid-template-columns: 1fr; }
+  .inventory-help { grid-column: auto; }
+  .inventory-table { display: block; overflow: visible; }
+  .inventory-table thead { display: none; }
+  .inventory-table tbody, .inventory-table tr, .inventory-table td { display: block; width: 100%; }
+  .inventory-table tr.inventory-category-row { display: block; margin-top: .7rem; }
+  .inventory-table tr.inventory-category-row th { display: block; }
+  .inventory-table tr.inventory-product-row { margin-top: .7rem; border: 1px solid var(--line); border-bottom: 0; }
+  .inventory-table tr.inventory-product-row th { display: block; }
+  .inventory-table tr.inventory-product-row .inventory-product { align-items: start; flex-direction: column; gap: .2rem; }
+  .inventory-table tr.inventory-batch-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0 .8rem; padding: .8rem; border: 1px solid var(--line); border-top: 0; }
+  .inventory-table tr.inventory-batch-row td { display: flex; justify-content: space-between; align-items: center; gap: .8rem; padding: .45rem 0; border-bottom: 0; }
+  .inventory-table tr.inventory-batch-row td::before { content: attr(data-label); color: var(--muted); font-size: .78rem; font-weight: 700; text-transform: uppercase; }
+  .inventory-table tr.inventory-batch-row td:first-child { grid-column: 1 / -1; }
+  .inventory-table tr.inventory-batch-row td:nth-child(4) { grid-column: 1 / -1; }
+  .inventory-table tr.inventory-batch-row td:nth-child(5) { grid-column: 1 / -1; }
+  .inventory-count-input { width: 7rem; }
+  .inventory-footer { align-items: stretch; flex-direction: column; }
+  .inventory-footer button { width: 100%; }
+}
 """
 
 
@@ -134,14 +196,17 @@ def _page(
     message: Optional[str] = None,
     active_path: str = "/",
 ) -> str:
+    if active_path == "/batches/inventory":
+        active_path = "/inventory"
     flash = "" if message is None else f'<p class="success">{_escape(message)}</p>'
     navigation = (
         ("/", "⌂", "Tableau de bord"),
+        ("/inventory", "✓", "Inventaire"),
         ("/products", "🥕", "Produits"),
-        ("/categories", "▦", "Catégories"),
         ("/batches", "📦", "Lots"),
-        ("/movements", "↗", "Historique"),
         ("/alerts", "!", "Alertes"),
+        ("/movements", "↗", "Historique"),
+        ("/categories", "▦", "Catégories"),
     )
     nav_links = []
     for href, icon, label in navigation:
@@ -149,6 +214,8 @@ def _page(
             href != "/" and active_path.startswith(href + "/")
         )
         class_name = "nav-link active" if is_active else "nav-link"
+        if href == "/inventory":
+            class_name += " nav-featured"
         current = ' aria-current="page"' if is_active else ""
         nav_links.append(
             f'<a class="{class_name}" href="{href}"{current}>'
@@ -491,7 +558,7 @@ def batch_edit_page(repository: Repository, batch_id: int) -> str:
     return content
 
 
-def inventory_page(repository: Repository, batch_id: int) -> str:
+def batch_inventory_page(repository: Repository, batch_id: int) -> str:
     """Affiche le formulaire de comptage réel d'un lot."""
 
     batch = repository.get_batch(batch_id)
@@ -518,6 +585,222 @@ def inventory_page(repository: Repository, batch_id: int) -> str:
     </div>
   </form>
 </div>"""
+    return content
+
+
+def _inventory_table(repository: Repository) -> str:
+    """Construit le tableau de comptage de tous les lots actifs."""
+
+    snapshot = StockApplication(repository).service.stock_snapshot()
+    products = {product.id: product for product in snapshot.products}
+    batches = sorted(
+        snapshot.batches,
+        key=lambda batch: (
+            product_sort_key(products[batch.product_id])
+            if batch.product_id in products
+            else ("", "", 0),
+            (
+                calculate_effective_expiry(products[batch.product_id], batch)
+                or date.max
+            )
+            if batch.product_id in products
+            else date.max,
+            batch.purchase_date,
+            batch.id or 0,
+        ),
+    )
+    if not batches:
+        return (
+            '<div class="panel inventory-empty">'
+            '<h3>Aucun lot en stock</h3>'
+            '<p class="muted">Ajoutez un lot avant de démarrer un inventaire.</p>'
+            '<a class="button" href="/batches">Gérer les lots</a>'
+            '</div>'
+        )
+
+    rows = []
+    last_category = None
+    last_product_id = None
+    category_number = -1
+    category_group = ""
+    product_group = ""
+    for batch in batches:
+        product = products.get(batch.product_id)
+        if product is None:
+            continue
+        category_key = sort_text(product.category)
+        if category_key != last_category:
+            category_number += 1
+            category_group = "inventory-category-{}".format(category_number)
+            rows.append(
+                '<tr class="category-row inventory-category-row" '
+                f'data-inventory-category="{_escape(category_group)}">'
+                f'<th colspan="6">{_escape(product.category)}</th></tr>'
+            )
+            last_category = category_key
+            last_product_id = None
+        if product.id != last_product_id:
+            product_group = "inventory-product-{}".format(product.id)
+            total = snapshot.totals.get(product.id, 0.0)
+            rows.append(
+                '<tr class="inventory-product-row" '
+                f'data-inventory-category="{_escape(category_group)}" '
+                f'data-inventory-product="{_escape(product_group)}">'
+                '<th colspan="6"><div class="inventory-product">'
+                f'<strong>{_escape(product.name)}</strong>'
+                f'<span class="inventory-product-total">Total produit : '
+                f'{_escape(format_quantity(total))} {_escape(product.unit)}</span>'
+                '</div></th></tr>'
+            )
+            last_product_id = product.id
+
+        effective_expiry = calculate_effective_expiry(product, batch)
+        current_quantity = format_quantity(batch.quantity)
+        search_text = " ".join(
+            (
+                product.name,
+                product.category,
+                str(batch.id),
+                format_date(effective_expiry),
+            )
+        )
+        rows.append(
+            '<tr class="inventory-batch-row" data-inventory-batch-row '
+            f'data-inventory-category="{_escape(category_group)}" '
+            f'data-inventory-product="{_escape(product_group)}" '
+            f'data-search="{_escape(search_text.casefold())}">'
+            f'<td data-label="Produit"><strong>{_escape(product.name)}</strong>'
+            f'<br><span class="muted">{_escape(product.category)}</span></td>'
+            f'<td data-label="Lot">#{_escape(batch.id)}</td>'
+            f'<td data-label="Théorique" class="number">'
+            f'{_escape(current_quantity)} {_escape(product.unit)}</td>'
+            '<td data-label="Compté">'
+            f'<label class="sr-only" for="count_{_escape(batch.id)}">'
+            f'Quantité comptée pour {_escape(product.name)}, lot #{_escape(batch.id)}'
+            '</label>'
+            f'<input class="inventory-count-input" id="count_{_escape(batch.id)}" '
+            f'name="count_{_escape(batch.id)}" type="number" min="0" step="0.001" '
+            f'inputmode="decimal" autocomplete="off" placeholder="{_escape(current_quantity)}" '
+            f'data-current="{_escape(current_quantity)}">'
+            '</td>'
+            '<td data-label="Écart" class="number">'
+            f'<output class="delta delta-zero" data-delta-for="{_escape(batch.id)}">'
+            'Non compté</output></td>'
+            f'<td data-label="Date limite">{_escape(format_date(effective_expiry))}</td>'
+            '</tr>'
+        )
+    return (
+        '<table class="inventory-table"><thead><tr>'
+        '<th>Produit</th><th>Lot</th><th>Théorique</th><th>Compté</th>'
+        '<th>Écart</th><th>Date limite</th></tr></thead>'
+        f'<tbody>{"".join(rows)}</tbody></table>'
+    )
+
+
+def inventory_page(repository: Repository) -> str:
+    """Affiche le comptage global des lots actuellement en stock."""
+
+    snapshot = StockApplication(repository).service.stock_snapshot()
+    products_in_stock = {batch.product_id for batch in snapshot.batches}
+    total_value = sum(batch_value_cents(batch) for batch in snapshot.batches)
+    actions = '<a class="button ghost" href="/batches">Voir les lots</a>'
+    content = _heading(
+        "Inventaire",
+        "Comptez les quantités réellement présentes, lot par lot.",
+        actions,
+    )
+    content += (
+        '<div class="cards">'
+        f'<div class="card"><strong>{_escape(len(snapshot.batches))}</strong>'
+        '<span>lots à compter</span></div>'
+        f'<div class="card"><strong>{_escape(len(products_in_stock))}</strong>'
+        '<span>produits concernés</span></div>'
+        f'<div class="card"><strong>{_escape(format_price(total_value))}</strong>'
+        '<span>valeur théorique</span></div>'
+        '</div>'
+    )
+    content += (
+        '<form class="inventory-form" method="post" action="/inventory" '
+        'data-inventory-form>'
+        '<section class="panel inventory-toolbar">'
+        '<label>Date du comptage '
+        f'<input name="inventory_date" type="date" value="{date.today().isoformat()}" required>'
+        '</label>'
+        '<label>Motif '
+        '<input name="reason" value="Inventaire complet" required>'
+        '</label>'
+        '<label>Rechercher '
+        '<input type="search" data-inventory-search placeholder="Produit, lot ou date limite">'
+        '</label>'
+        '<p class="inventory-help">Laissez vide les lots non comptés. '
+        'Le stock théorique est affiché comme repère.</p>'
+        '</section>'
+        f'{_inventory_table(repository)}'
+        '<section class="panel inventory-footer">'
+        '<p>Les écarts seront enregistrés dans l’historique comme entrées ou pertes.</p>'
+        '<button type="submit" data-inventory-submit>Enregistrer le comptage</button>'
+        '</section>'
+        '</form>'
+        '<script>(function () {'
+        'const form = document.querySelector("[data-inventory-form]");'
+        'if (!form) return;'
+        'const rows = Array.from(form.querySelectorAll("[data-inventory-batch-row]"));'
+        'const productRows = Array.from(form.querySelectorAll("[data-inventory-product]"))'
+        '.filter((row) => row.classList.contains("inventory-product-row"));'
+        'const categoryRows = Array.from(form.querySelectorAll("[data-inventory-category]"))'
+        '.filter((row) => row.classList.contains("inventory-category-row"));'
+        'const submit = form.querySelector("[data-inventory-submit]");'
+        'const search = form.querySelector("[data-inventory-search]");'
+        'const format = (value) => new Intl.NumberFormat("fr-FR", '
+        '{ maximumFractionDigits: 3 }).format(value);'
+        'function updateRow(row) {'
+        '  const input = row.querySelector(".inventory-count-input");'
+        '  const output = row.querySelector(".delta");'
+        '  const raw = input.value.trim().replace(",", ".");'
+        '  row.classList.toggle("counted", raw !== "");'
+        '  if (raw === "") {'
+        '    output.textContent = "Non compté";'
+        '    output.className = "delta delta-zero";'
+        '    return;'
+        '  }'
+        '  const target = Number(raw);'
+        '  const difference = target - Number(input.dataset.current);'
+        '  if (!Number.isFinite(target) || target < 0) {'
+        '    output.textContent = "À vérifier";'
+        '    output.className = "delta delta-negative";'
+        '    return;'
+        '  }'
+        '  output.textContent = (difference > 0 ? "+" : "") + format(difference);'
+        '  output.className = "delta " + (difference > 0 ? "delta-positive" : '
+        'difference < 0 ? "delta-negative" : "delta-zero");'
+        '}'
+        'function updateVisibility() {'
+        '  const needle = search.value.trim().toLocaleLowerCase();'
+        '  rows.forEach((row) => {'
+        '    row.hidden = Boolean(needle) && !row.dataset.search.includes(needle);'
+        '  });'
+        '  productRows.forEach((row) => {'
+        '    row.hidden = !rows.some((batch) => !batch.hidden && '
+        '      batch.dataset.inventoryProduct === row.dataset.inventoryProduct);'
+        '  });'
+        '  categoryRows.forEach((row) => {'
+        '    row.hidden = !rows.some((batch) => !batch.hidden && '
+        '      batch.dataset.inventoryCategory === row.dataset.inventoryCategory);'
+        '  });'
+        '}'
+        'function updateSubmit() {'
+        '  submit.disabled = !rows.some((row) => '
+        'row.querySelector(".inventory-count-input").value.trim());'
+        '}'
+        'rows.forEach((row) => row.querySelector(".inventory-count-input")'
+        '.addEventListener("input", () => { updateRow(row); updateSubmit(); }));'
+        'search.addEventListener("input", updateVisibility);'
+        'form.addEventListener("submit", (event) => {'
+        '  updateSubmit(); if (submit.disabled) event.preventDefault();'
+        '});'
+        'rows.forEach(updateRow); updateSubmit(); updateVisibility();'
+        '})();</script>'
+    )
     return content
 
 
@@ -593,7 +876,10 @@ def _batch_alerts(items: List[AlertBatch], empty: str = "Aucun lot concerné.") 
 
 def dashboard(repository: Repository) -> str:
     snapshot = StockApplication(repository).dashboard()
-    actions = '<a class="button ghost" href="/export/stock.csv">Exporter le stock</a>'
+    actions = (
+        '<a class="button" href="/inventory">Commencer un inventaire</a>'
+        '<a class="button ghost" href="/export/stock.csv">Exporter le stock</a>'
+    )
     content = _heading(
         "Tableau de bord",
         f"État du stock au {snapshot.reference_date.isoformat()}.",
@@ -607,6 +893,16 @@ def dashboard(repository: Repository) -> str:
         f'<div class="card"><strong>{_escape(snapshot.below_minimum)}</strong><span>sous le seuil</span></div>'
         f'<div class="card"><strong>{_escape(snapshot.expired)}</strong><span>lots périmés</span></div>'
         '</div>'
+    )
+    content += (
+        '<section class="section panel">'
+        '<div class="section-heading"><h3>Actions rapides</h3>'
+        '<span class="muted">Les tâches principales sont accessibles ici.</span></div>'
+        '<div class="quick-actions">'
+        '<a class="button" href="/inventory">Faire l’inventaire</a>'
+        '<a class="button secondary" href="/batches">Ajouter ou gérer un lot</a>'
+        '<a class="button secondary" href="/alerts">Consulter les alertes</a>'
+        '</div></section>'
     )
     content += '<section class="section"><div class="section-heading"><h3>État des produits</h3><a href="/products">Gérer les produits →</a></div>'
     content += _products_table(list(snapshot.products)) + '</section>'

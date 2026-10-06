@@ -17,7 +17,7 @@ import secrets
 import socket
 import sqlite3
 from http.cookies import CookieError, SimpleCookie
-from typing import Mapping, Optional, Sequence
+from typing import List, Mapping, Optional, Sequence, Tuple
 from urllib.parse import parse_qs, urlencode, urlparse
 
 from .application import StockApplication
@@ -29,6 +29,7 @@ from .web_views import (
     _page,
     alerts_page,
     batch_edit_page,
+    batch_inventory_page,
     batches_page,
     categories_page,
     dashboard,
@@ -40,6 +41,7 @@ from .web_views import (
 
 
 MAX_FORM_BYTES = 64 * 1024
+MAX_FORM_FIELDS = 2000
 
 
 def _escape(value: object) -> str:
@@ -91,6 +93,32 @@ def _date_form_value(
         return date.fromisoformat(value)
     except ValueError:
         raise ValueError(f"Le champ « {name} » doit utiliser AAAA-MM-JJ.") from None
+
+
+def _inventory_counts(
+    form: Mapping[str, Sequence[str]],
+) -> List[Tuple[int, Decimal]]:
+    """Extrait les lignes renseignées du formulaire d'inventaire global."""
+
+    counts = []
+    for name, values in form.items():
+        if not name.startswith("count_"):
+            continue
+        suffix = name[len("count_") :]
+        if not suffix:
+            raise ValueError("L'identifiant du lot est obligatoire.")
+        try:
+            batch_id = int(suffix)
+        except ValueError:
+            raise ValueError("L'identifiant du lot est invalide.") from None
+        if len(values) != 1:
+            raise ValueError(
+                "Une quantité d'inventaire ne peut être saisie qu'une fois."
+            )
+        if not values[0].strip():
+            continue
+        counts.append((batch_id, _decimal_form_value(form, name)))
+    return counts
 
 
 def _query_integer(
@@ -279,6 +307,9 @@ class StockRequestHandler(BaseHTTPRequestHandler):
             if parsed.path == "/":
                 content = dashboard(repository)
                 title = "Tableau de bord"
+            elif parsed.path == "/inventory":
+                content = inventory_page(repository)
+                title = "Inventaire"
             elif parsed.path == "/products":
                 search = parse_qs(parsed.query).get("q", [""])[0]
                 content = products_page(repository, search)
@@ -306,7 +337,7 @@ class StockRequestHandler(BaseHTTPRequestHandler):
                 batch_id = _query_integer(parsed.query, "batch_id")
                 if batch_id is None:
                     raise ValueError("Le filtre « batch_id » est obligatoire.")
-                content = inventory_page(repository, batch_id)
+                content = batch_inventory_page(repository, batch_id)
                 title = "Inventaire"
             elif parsed.path == "/movements":
                 batch_id = _query_integer(parsed.query, "batch_id")
@@ -346,7 +377,7 @@ class StockRequestHandler(BaseHTTPRequestHandler):
             form = parse_qs(
                 self.rfile.read(length).decode("utf-8"),
                 keep_blank_values=True,
-                max_num_fields=50,
+                max_num_fields=MAX_FORM_FIELDS,
             )
         except (UnicodeError, ValueError):
             self._error("Le formulaire est mal encodé ou contient trop de champs.")
@@ -394,6 +425,22 @@ class StockRequestHandler(BaseHTTPRequestHandler):
                     Category(name=_form_value(form, "name"))
                 )
                 self._redirect("Catégorie créée.", "/categories")
+            elif path == "/inventory":
+                inventory_date = _date_form_value(form, "inventory_date")
+                if inventory_date is None:
+                    raise ValueError("La date de l'inventaire est obligatoire.")
+                counts = _inventory_counts(form)
+                if not counts:
+                    raise ValueError("Saisissez au moins une quantité comptée.")
+                movements = application.record_inventories(
+                    counts, inventory_date, _form_value(form, "reason")
+                )
+                self._redirect(
+                    "Inventaire enregistré. {} écart(s) ajusté(s).".format(
+                        len(movements)
+                    ),
+                    "/inventory",
+                )
             elif path == "/batches":
                 purchase_date = _date_form_value(form, "purchase_date")
                 if purchase_date is None:

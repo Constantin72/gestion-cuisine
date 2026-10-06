@@ -4,7 +4,7 @@ from dataclasses import replace
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 import sqlite3
-from typing import ContextManager, Dict, List, Optional
+from typing import ContextManager, Dict, List, Optional, Sequence, Tuple
 
 from .db import read_transaction, transaction
 from .models import Batch, Category, Product, StockMovement
@@ -696,59 +696,93 @@ class Repository:
     ) -> StockMovement:
         """Enregistre l'écart entre le stock théorique et le stock compté."""
 
-        validated_batch_id = _validate_id(
-            batch_id, "L'identifiant du lot"
+        movements = self.record_inventories(
+            [(batch_id, actual_quantity)], movement_date, reason
         )
-        target_quantity = _rounded_quantity_decimal(actual_quantity)
+        if not movements:
+            raise ValueError("L'inventaire ne révèle aucun écart pour ce lot.")
+        return movements[0]
+
+    def record_inventories(
+        self,
+        counts: Sequence[Tuple[int, object]],
+        movement_date: date,
+        reason: str,
+    ) -> List[StockMovement]:
+        """Enregistre plusieurs écarts d'inventaire dans une seule transaction.
+
+        Les quantités comptées peuvent être identiques au stock théorique : ces
+        lignes sont simplement ignorées. Toute erreur sur une ligne annule
+        l'ensemble du comptage.
+        """
+
         validated_date = _validate_date(movement_date, "La date de l'inventaire")
         assert validated_date is not None
+        if not isinstance(reason, str):
+            raise TypeError("La raison de l'inventaire doit être une chaîne.")
+        prepared_reason = reason.strip()
+        if not prepared_reason:
+            raise ValueError("La raison de l'inventaire est obligatoire.")
 
+        prepared_counts = []
+        seen_batch_ids = set()
+        for batch_id, actual_quantity in counts:
+            validated_batch_id = _validate_id(
+                batch_id, "L'identifiant du lot"
+            )
+            if validated_batch_id in seen_batch_ids:
+                raise ValueError("Un lot ne peut être compté qu'une seule fois.")
+            seen_batch_ids.add(validated_batch_id)
+            prepared_counts.append(
+                (validated_batch_id, _rounded_quantity_decimal(actual_quantity))
+            )
+
+        movements = []
         with transaction(self.connection):
-            row = self.connection.execute(
-                "SELECT quantity FROM batches WHERE id = ?",
-                (validated_batch_id,),
-            ).fetchone()
-            if row is None:
-                raise KeyError("Lot introuvable.")
+            for validated_batch_id, target_quantity in prepared_counts:
+                row = self.connection.execute(
+                    "SELECT quantity FROM batches WHERE id = ?",
+                    (validated_batch_id,),
+                ).fetchone()
+                if row is None:
+                    raise KeyError("Lot introuvable.")
 
-            current_quantity = _rounded_quantity_decimal(row["quantity"])
-            difference = target_quantity - current_quantity
-            if difference == 0:
-                raise ValueError(
-                    "L'inventaire ne révèle aucun écart pour ce lot."
+                current_quantity = _rounded_quantity_decimal(row["quantity"])
+                difference = target_quantity - current_quantity
+                if difference == 0:
+                    continue
+
+                movement_type = "in" if difference > 0 else "loss"
+                prepared = _normalise_movement(
+                    StockMovement(
+                        batch_id=validated_batch_id,
+                        type=movement_type,
+                        quantity=float(abs(difference)),
+                        date=validated_date,
+                        reason=prepared_reason,
+                    )
                 )
-
-            movement_type = "in" if difference > 0 else "loss"
-            prepared = _normalise_movement(
-                StockMovement(
-                    batch_id=validated_batch_id,
-                    type=movement_type,
-                    quantity=float(abs(difference)),
-                    date=validated_date,
-                    reason=reason,
+                self.connection.execute(
+                    "UPDATE batches SET quantity = ? WHERE id = ?",
+                    (float(target_quantity), validated_batch_id),
                 )
-            )
-            self.connection.execute(
-                "UPDATE batches SET quantity = ? WHERE id = ?",
-                (float(target_quantity), validated_batch_id),
-            )
-            cursor = self.connection.execute(
-                """
-                INSERT INTO stock_movements (
-                    batch_id, type, quantity, date, reason
-                ) VALUES (?, ?, ?, ?, ?)
-                """,
-                (
-                    prepared.batch_id,
-                    prepared.type,
-                    prepared.quantity,
-                    _date_to_iso(prepared.date),
-                    prepared.reason,
-                ),
-            )
-            movement_id = int(cursor.lastrowid)
+                cursor = self.connection.execute(
+                    """
+                    INSERT INTO stock_movements (
+                        batch_id, type, quantity, date, reason
+                    ) VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        prepared.batch_id,
+                        prepared.type,
+                        prepared.quantity,
+                        _date_to_iso(prepared.date),
+                        prepared.reason,
+                    ),
+                )
+                movements.append(replace(prepared, id=int(cursor.lastrowid)))
 
-        return replace(prepared, id=movement_id)
+        return movements
 
     def list_movements(
         self,

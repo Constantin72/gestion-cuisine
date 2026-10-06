@@ -7,7 +7,7 @@ de SQLite.
 
 from dataclasses import dataclass
 from datetime import date
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from .formatting import product_sort_key
 from .models import Batch, Category, Product, StockMovement
@@ -224,6 +224,16 @@ class StockApplication:
         return self.repository.record_inventory(
             batch_id, actual_quantity, inventory_date, reason
         )
+
+    def record_inventories(
+        self,
+        counts: Sequence[Tuple[int, object]],
+        inventory_date: date,
+        reason: str,
+    ) -> List[StockMovement]:
+        """Enregistre un inventaire global de façon atomique."""
+
+        return self.repository.record_inventories(counts, inventory_date, reason)
 
     def open_batch(self, batch_id: int, opened_date: Optional[date] = None) -> Batch:
         return self.repository.mark_batch_open(batch_id, opened_date)

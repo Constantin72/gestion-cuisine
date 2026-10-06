@@ -342,6 +342,44 @@ class RepositoryTests(RepositoryTestCase):
                 batch.id, 3.0, PURCHASE_DATE, "Comptage identique"
             )
 
+    def test_bulk_inventory_is_atomic_and_skips_unchanged_lines(self) -> None:
+        product = self.repository.create_product(self.product())
+        first_batch = self.repository.create_batch(self.batch(product.id, 3.0))
+        second_batch = self.repository.create_batch(self.batch(product.id, 4.0))
+
+        movements = self.repository.record_inventories(
+            [(first_batch.id, 2.5), (second_batch.id, 4.0)],
+            PURCHASE_DATE,
+            "Inventaire complet",
+        )
+
+        self.assertEqual(len(movements), 1)
+        self.assertEqual(movements[0].batch_id, first_batch.id)
+        self.assertAlmostEqual(self.repository.get_batch(first_batch.id).quantity, 2.5)
+        self.assertAlmostEqual(self.repository.get_batch(second_batch.id).quantity, 4.0)
+
+        self.connection.execute(
+            """
+            CREATE TRIGGER reject_bulk_inventory_addition
+            BEFORE INSERT ON stock_movements
+            WHEN NEW.type = 'in'
+            BEGIN
+                SELECT RAISE(ABORT, 'forced bulk inventory failure');
+            END
+            """
+        )
+        with self.assertRaises(sqlite3.IntegrityError):
+            self.repository.record_inventories(
+                [(first_batch.id, 2.0), (second_batch.id, 5.0)],
+                PURCHASE_DATE,
+                "Inventaire suivant",
+            )
+
+        self.assertAlmostEqual(self.repository.get_batch(first_batch.id).quantity, 2.5)
+        self.assertAlmostEqual(self.repository.get_batch(second_batch.id).quantity, 4.0)
+        self.assertEqual(self.movement_count(first_batch.id), 2)
+        self.assertEqual(self.movement_count(second_batch.id), 1)
+
     def test_product_with_batches_cannot_be_deleted(self) -> None:
         product = self.repository.create_product(self.product())
         self.repository.create_batch(self.batch(product.id))

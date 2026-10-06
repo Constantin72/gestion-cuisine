@@ -360,6 +360,70 @@ class WebTests(unittest.TestCase):
 
         page = self.get("/movements?batch_id=1")
         self.assertIn("Comptage du matin", page)
+
+    def test_global_inventory_counts_multiple_batches(self) -> None:
+        self.post(
+            "/products",
+            {
+                "name": "Riz",
+                "unit": "kg",
+                "category": "Épicerie",
+                "minimum": "1",
+            },
+        )
+        self.post(
+            "/products",
+            {
+                "name": "Lait",
+                "unit": "L",
+                "category": "Frais",
+                "minimum": "1",
+            },
+        )
+        self.post(
+            "/batches",
+            {
+                "product_id": "1",
+                "quantity": "5",
+                "unit_price": "2",
+                "purchase_date": "2026-09-29",
+            },
+        )
+        self.post(
+            "/batches",
+            {
+                "product_id": "2",
+                "quantity": "3",
+                "unit_price": "1.25",
+                "purchase_date": "2026-09-29",
+            },
+        )
+
+        page = self.get("/inventory")
+        self.assertIn('href="/inventory" aria-current="page"', page)
+        self.assertIn("lots à compter", page)
+        self.assertIn('name="count_1"', page)
+        self.assertIn('name="count_2"', page)
+        self.assertIn("Riz", page)
+        self.assertIn("Lait", page)
+
+        page = self.post(
+            "/inventory",
+            {
+                "inventory_date": "2026-10-01",
+                "reason": "Inventaire complet",
+                "count_1": "4.5",
+                "count_2": "3.25",
+            },
+        )
+        self.assertIn("Inventaire enregistré.", page)
+        self.assertIn("1.25", page)
+
+        page = self.get("/batches")
+        self.assertIn(">4.5<", page)
+        self.assertIn(">3.25<", page)
+        page = self.get("/movements")
+        self.assertIn("Inventaire complet", page)
         self.assertIn("Perte", page)
 
     def test_public_server_requires_basic_authentication(self) -> None:
