@@ -122,15 +122,28 @@ def _inventory_counts(
 
 
 def _query_integer(
-    query: str, name: str, default: Optional[int] = None
+    query: str,
+    name: str,
+    default: Optional[int] = None,
+    minimum: Optional[int] = None,
+    maximum: Optional[int] = None,
 ) -> Optional[int]:
     values = parse_qs(query).get(name, [])
     if not values or not values[0].strip():
         return default
     try:
-        return int(values[0])
+        parsed = int(values[0])
     except ValueError:
         raise ValueError(f"Le filtre « {name} » doit être un entier.") from None
+    if minimum is not None and parsed < minimum:
+        raise ValueError(
+            f"Le filtre « {name} » doit être supérieur ou égal à {minimum}."
+        )
+    if maximum is not None and parsed > maximum:
+        raise ValueError(
+            f"Le filtre « {name} » doit être inférieur ou égal à {maximum}."
+        )
+    return parsed
 
 
 def _query_date(query: str, name: str) -> Optional[date]:
@@ -156,6 +169,7 @@ class StockRequestHandler(BaseHTTPRequestHandler):
     def _send_unauthorized(self) -> None:
         self.send_response(401)
         self.send_header("WWW-Authenticate", 'Basic realm="Stock Cuisine"')
+        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", "0")
         self.end_headers()
 
@@ -237,6 +251,9 @@ class StockRequestHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(data)))
         if csrf_token is not None:
             cookie_attributes = "Path=/; HttpOnly; SameSite=Strict"
@@ -258,6 +275,8 @@ class StockRequestHandler(BaseHTTPRequestHandler):
         self.send_header(
             "Content-Disposition", f'attachment; filename="stock-cuisine-{kind}.csv"'
         )
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
@@ -266,6 +285,7 @@ class StockRequestHandler(BaseHTTPRequestHandler):
         location = target + ("&" if "?" in target else "?") + urlencode({"message": message})
         self.send_response(303)
         self.send_header("Location", location)
+        self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", "0")
         self.end_headers()
 
@@ -341,12 +361,16 @@ class StockRequestHandler(BaseHTTPRequestHandler):
                 title = "Inventaire"
             elif parsed.path == "/movements":
                 batch_id = _query_integer(parsed.query, "batch_id")
-                limit = _query_integer(parsed.query, "limit", 100)
+                limit = _query_integer(
+                    parsed.query, "limit", 100, minimum=1, maximum=1000
+                )
                 assert limit is not None
                 content = movements_page(repository, batch_id, limit)
                 title = "Historique"
             elif parsed.path == "/alerts":
-                days = _query_integer(parsed.query, "days", 7)
+                days = _query_integer(
+                    parsed.query, "days", 7, minimum=0, maximum=3650
+                )
                 assert days is not None
                 content = alerts_page(repository, days, _query_date(parsed.query, "date"))
                 title = "Alertes"

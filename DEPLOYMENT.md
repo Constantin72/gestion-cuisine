@@ -1,29 +1,74 @@
 # Hébergement et maintenance
 
-Une instance hébergée permet à l'équipe de travailler sur la même base.
-Les mises à jour du code se font par Git ; SQLite reste sur l'hébergeur.
-Ne pas remettre une ancienne copie locale de la base lors d'une mise à jour.
+Cette page distingue le terminal local, le terminal SSH Alwaysdata et le panneau
+d'administration web. Le code se met à jour par Git, mais la base SQLite reste
+sur l'hébergeur. **Ne jamais envoyer `stock.db` dans Git et ne jamais remplacer
+la base de production lors d'une simple mise à jour du code.**
+
+Les noms en majuscules sont des placeholders à remplacer :
+
+- `UTILISATEUR_SSH` : utilisateur SSH créé dans Alwaysdata ;
+- `NOM_DU_COMPTE` : nom du compte Alwaysdata, utilisé dans `/home/...` ;
+- `$IP` et `$PORT` : variables à conserver telles quelles dans la commande du site.
 
 ## Alwaysdata
 
-### Préparer le code en SSH
+### 1. Publier le code depuis l'ordinateur local
 
-Reprendre le nom d'utilisateur et l'hôte indiqués dans l'administration SSH.
-`UTILISATEUR_SSH` est le compte de connexion ; `NOM_DU_COMPTE` est le compte
-d'hébergement et son dossier `/home/NOM_DU_COMPTE`. Ils peuvent différer.
+Dans le terminal local, depuis la racine du projet :
+
+```bash
+git status
+PYTHONPATH=src python3 -m unittest discover -s tests -v
+git diff --check
+git add -A
+git diff --cached --check
+git status --short
+git commit -m "Décrire la modification"
+git push origin main
+```
+
+Si les tests échouent, arrêter la procédure et corriger avant de pousser. Le
+serveur ne doit recevoir que le code ; la base et les secrets restent ailleurs.
+
+### 2. Préparer le code en SSH
+
+Reprendre le nom d'utilisateur et l'hôte indiqués dans **Remote access →
+SSH/SFTP**. `UTILISATEUR_SSH` est le compte de connexion ; `NOM_DU_COMPTE`
+est le compte d'hébergement et son dossier `/home/NOM_DU_COMPTE`. Ils peuvent
+différer. Voir aussi la documentation officielle [SSH/SFTP
+Alwaysdata](https://help.alwaysdata.com/en/docs/web-hosting/remote-access/ssh/).
 
 ```bash
 ssh UTILISATEUR_SSH@ssh-NOM_DU_COMPTE.alwaysdata.net
+```
+
+À exécuter ensuite dans le terminal SSH, uniquement lors du premier déploiement :
+
+```bash
 git clone https://github.com/Constantin72/gestion-cuisine.git ~/gestion-cuisine
 cd ~/gestion-cuisine
 mkdir -p donnees sauvegardes
 ```
 
-Si le dossier existe déjà, vérifier son origine avec
-`git -C ~/gestion-cuisine remote -v`, puis utiliser `git pull --ff-only` dans
-ce dépôt. Ne pas tenter de le cloner une seconde fois.
+Si le dossier existe déjà, ne pas le cloner une seconde fois :
 
-### Configurer le site
+```bash
+cd ~/gestion-cuisine
+git remote -v
+git status --short
+mkdir -p donnees sauvegardes
+```
+
+Si `git status` affiche des modifications sur le serveur, s'arrêter et les
+examiner. La sortie doit être vide avant de continuer. Ne pas utiliser
+`git reset --hard` pour débloquer la mise à jour. Une fois le dépôt propre :
+
+```bash
+git pull --ff-only
+```
+
+### 3. Configurer le site
 
 Dans **Web → Sites**, ajouter ou modifier le site. Remplacer `NOM_DU_COMPTE`
 dans les chemins et dans l'adresse.
@@ -34,14 +79,15 @@ dans les chemins et dans l'adresse.
 | Type | Programme utilisateur / User program |
 | Répertoire de travail | `/home/NOM_DU_COMPTE/gestion-cuisine` |
 
-Commande, sur une seule ligne :
+Commande à saisir sur une seule ligne :
 
 ```bash
 python -m stock_cuisine --database /home/NOM_DU_COMPTE/gestion-cuisine/donnees/stock.db web --host $IP --port $PORT
 ```
 
-Conserver littéralement `$IP` et `$PORT` : Alwaysdata les fournit. Le serveur
-prend en charge IPv4 et IPv6. Utiliser Python 3.9 ou supérieur.
+Conserver littéralement `$IP` et `$PORT` : Alwaysdata les remplace au démarrage.
+Le projet demande Python 3.9 ou supérieur ; sélectionner une version compatible
+dans **Environment** si le compte en propose plusieurs.
 Dans **Environnement**, une variable par ligne, sans espaces autour de `=` :
 
 ```dotenv
@@ -50,27 +96,42 @@ STOCK_CUISINE_AUTH_USER=equipe
 STOCK_CUISINE_AUTH_PASSWORD=REMPLACER_PAR_UN_SECRET_LONG_ET_UNIQUE
 ```
 
-L'application ne lit pas automatiquement un fichier `.env`. Sur Alwaysdata,
-renseigner ces variables dans la configuration du site. Activer l'accès HTTPS
-et ouvrir le site en navigation privée pour vérifier la demande d'identification.
+L'application ne lit pas automatiquement un fichier `.env` sur Alwaysdata.
+Renseigner les variables dans la configuration du site, activer HTTPS, puis
+redémarrer le site. Tester en navigation privée : une demande d'identification
+HTTP Basic doit apparaître.
 
-Références : [Programme utilisateur](https://help.alwaysdata.com/en/docs/web-hosting/sites/http-servers/user-program/)
-et [variables d'écoute HTTP](https://help.alwaysdata.com/en/docs/technical-specifications/migrations/2020-software-architecture/).
+Documentation officielle : [ajouter un site](https://help.alwaysdata.com/en/docs/web-hosting/sites/add-a-site/),
+[programme utilisateur](https://help.alwaysdata.com/en/docs/web-hosting/sites/http-servers/user-program/)
+et [configuration Python](https://help.alwaysdata.com/en/docs/web-hosting/languages/python/configuration/).
 
-### Importer un stock existant au premier déploiement
+### 4. Importer un stock existant au premier déploiement
 
 Sur l'ordinateur qui possède la base, depuis la racine du projet :
 
 ```bash
-./.venv/bin/python -m stock_cuisine --database donnees/stock.db backup \
-  --output sauvegardes/transfert.db
-scp sauvegardes/transfert.db UTILISATEUR_SSH@ssh-NOM_DU_COMPTE.alwaysdata.net:~/gestion-cuisine/donnees/transfert.db
+./.venv/bin/python -m stock_cuisine \
+  --database donnees/stock.db backup \
+  --output sauvegardes/transfert-2026-10-06.db
+scp sauvegardes/transfert-2026-10-06.db \
+  UTILISATEUR_SSH@ssh-NOM_DU_COMPTE.alwaysdata.net:~/gestion-cuisine/donnees/transfert.db
 ```
 
-Sur le serveur, avant de démarrer le site et uniquement si `stock.db` n'existe
-pas encore, copier `transfert.db` vers `stock.db`. Si une base existe déjà,
-il s'agit d'une restauration : arrêter le site et sauvegarder cette base avant
-tout remplacement. Ne pas écraser les données d'une équipe déjà active.
+Sur le serveur, vérifier les deux fichiers avant toute opération :
+
+```bash
+cd ~/gestion-cuisine
+ls -lh donnees/
+```
+
+Si `donnees/stock.db` n'existe pas encore, installer la copie :
+
+```bash
+mv donnees/transfert.db donnees/stock.db
+```
+
+Si `donnees/stock.db` existe déjà, ne pas exécuter `mv` : il s'agit d'une
+restauration et il faut d'abord arrêter le site et sauvegarder la base existante.
 
 Le processus web doit pouvoir écrire dans la base **et** dans son dossier,
 où SQLite crée ses journaux. Lorsque SSH et le web partagent le groupe du
@@ -81,19 +142,34 @@ chmod 770 ~/gestion-cuisine/donnees
 chmod 660 ~/gestion-cuisine/donnees/stock.db
 ```
 
-### Publier une mise à jour
+### 5. Publier une mise à jour
 
 Après avoir validé et poussé le code sur GitHub, dans le terminal SSH :
 
 ```bash
 cd ~/gestion-cuisine
 PYTHONPATH=src python -m stock_cuisine --database donnees/stock.db backup \
-  --output sauvegardes/avant-mise-a-jour.db
+  --output sauvegardes/avant-mise-a-jour-2026-10-06.db
+git status --short
+```
+
+Remplacer la date dans le nom de sauvegarde pour chaque mise à jour. La sortie
+de `git status --short` doit être vide ; ensuite seulement exécuter :
+
+```bash
 git pull --ff-only
 ```
 
-Choisir un autre nom de sauvegarde pour conserver les versions précédentes.
-Redémarrer ensuite le site dans l'administration Alwaysdata et vérifier le stock.
+Si `git pull --ff-only` refuse d'avancer, ne pas forcer : vérifier les
+modifications locales du serveur avant de recommencer.
+
+Redémarrer ensuite le site dans l'administration Alwaysdata et vérifier :
+
+1. l'ouverture en HTTPS et la demande d'identification ;
+2. le tableau de bord et le nombre de produits ;
+3. le stock d'un produit connu ;
+4. **Inventaire**, **Alertes** et **Historique**.
+
 La fermeture du terminal SSH n'arrête pas le site géré par l'hébergeur.
 Garder les identifiants hors de Git et des captures de logs partagées.
 
@@ -101,10 +177,11 @@ Garder les identifiants hors de Git et des captures de logs partagées.
 
 | Message ou symptôme | Vérification |
 | --- | --- |
-| `No module named stock_cuisine` | Chemin `PYTHONPATH`, sans espace dans le nom de variable |
+| `No module named stock_cuisine` | Depuis `~/gestion-cuisine`, utiliser `PYTHONPATH=src python ...` en SSH et le chemin absolu dans l'environnement du site |
+| `python: command not found` | Sélectionner une version Python dans l'environnement Alwaysdata ; la commande du site est `python`, pas `python3` |
 | `attempt to write a readonly database` | Droits de la base, du dossier et des éventuels fichiers `-wal` / `-shm` |
 | Mauvais stock ou base vide | Chemin absolu de `--database` et emplacement de la copie transférée |
-| Changement de code invisible | `git pull` sur le serveur puis site redémarré |
+| Changement de code invisible | `git pull --ff-only` sur le serveur puis site redémarré |
 | Pas de nouvelle demande de mot de passe | Navigation privée : le navigateur peut mémoriser HTTP Basic |
 
 Les logs sont accessibles dans l'administration et sous
@@ -157,6 +234,13 @@ même version de l'application sur une instance de contrôle. Lors du remplaceme
 conserver ensemble l'ancienne base et ses éventuels fichiers `-wal` / `-shm`
 à l'écart ; ne pas associer les anciens journaux à la base restaurée. Rétablir
 les droits d'écriture, redémarrer puis vérifier quantités et historique.
+
+Depuis `~/gestion-cuisine`, le contrôle d'une copie distante se fait ainsi ; le
+résultat attendu est `ok` :
+
+```bash
+python -c 'import sqlite3; print(sqlite3.connect("sauvegardes/avant-restauration.db").execute("PRAGMA integrity_check").fetchone()[0])'
+```
 
 Le schéma est versionné. L'application applique les migrations connues et
 refuse une base dont le schéma est plus récent que celui qu'elle prend en charge.

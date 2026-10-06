@@ -56,6 +56,8 @@ class WebTests(unittest.TestCase):
         self.assertIn("Tableau de bord", page)
         self.assertIn("Cuisine 4H", page)
         self.assertIn('href="/" aria-current="page"', page)
+        self.assertIn('href="/inventory"', page)
+        self.assertIn('href="#main-content"', page)
         self.assertIn("Aucun produit enregistré", page)
 
         page = self.post(
@@ -107,6 +109,19 @@ class WebTests(unittest.TestCase):
         self.assertIn("Stock initial", page)
         self.assertIn("Déjeuner", page)
         self.assertIn("Sortie", page)
+        self.assertIn("Lot #1 — Lait", page)
+
+        page = self.get("/products?q=Lait")
+        self.assertIn('type="search"', page)
+        self.assertIn("Effacer la recherche", page)
+
+        page = self.get("/batches?q=Lait")
+        self.assertIn("Effacer la recherche", page)
+
+        page = self.get("/alerts?days=14&date=2026-09-29")
+        self.assertIn("Fenêtre d’alerte (jours)", page)
+        self.assertIn('name="days"', page)
+        self.assertIn('href="/batches?q=1"', page)
 
         page = self.get("/batches")
         self.assertIn("Lait", page)
@@ -134,6 +149,12 @@ class WebTests(unittest.TestCase):
         page = self.post("/products/delete", {"product_id": "1"})
         self.assertIn("Produit supprimé.", page)
         self.assertIn("Aucun produit enregistré", page)
+
+    def test_empty_inventory_guides_to_batches_without_empty_form(self) -> None:
+        page = self.get("/inventory")
+        self.assertIn("Aucun lot en stock", page)
+        self.assertIn('href="/batches"', page)
+        self.assertNotIn('data-inventory-form', page)
 
     def test_exhausted_product_disappears_from_stock_views(self) -> None:
         self.post(
@@ -404,6 +425,8 @@ class WebTests(unittest.TestCase):
         self.assertIn("lots à compter", page)
         self.assertIn('name="count_1"', page)
         self.assertIn('name="count_2"', page)
+        self.assertIn('aria-controls="inventory-table"', page)
+        self.assertIn('aria-live="polite">0 / 2', page)
         self.assertIn("Riz", page)
         self.assertIn("Lait", page)
 
@@ -449,6 +472,11 @@ class WebTests(unittest.TestCase):
             )
             with urlopen(request) as response:
                 self.assertEqual(response.status, 200)
+                self.assertEqual(response.headers["X-Frame-Options"], "DENY")
+                self.assertEqual(response.headers["Cache-Control"], "no-store")
+                self.assertEqual(
+                    response.headers["X-Content-Type-Options"], "nosniff"
+                )
                 page = response.read().decode("utf-8")
                 self.assertIn('name="_csrf"', page)
                 cookie = response.headers["Set-Cookie"].split(";", 1)[0]
@@ -498,6 +526,14 @@ class WebTests(unittest.TestCase):
                 self.assertEqual(context.exception.code, expected_status)
                 context.exception.close()
         self.assertIn("Aucun produit enregistré", self.get("/products"))
+
+    def test_list_filters_reject_unbounded_values(self) -> None:
+        for path in ("/movements?limit=1001", "/alerts?days=3651"):
+            with self.subTest(path=path):
+                with self.assertRaises(HTTPError) as context:
+                    urlopen(self.base_url + path)
+                self.assertEqual(context.exception.code, 400)
+                context.exception.close()
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ ne touche pas les règles métier.
 from datetime import date
 import html
 from typing import List, Optional, Sequence
+from urllib.parse import quote
 
 from .application import AlertBatch, ProductStock, StockApplication
 from .formatting import (
@@ -44,6 +45,10 @@ STYLE = """
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; }
 a { color: var(--brand); }
+button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+.skip-link { position: absolute; left: .75rem; top: -4rem; z-index: 30; padding: .7rem 1rem; border-radius: .5rem; background: white; color: var(--brand-dark); box-shadow: var(--shadow); font-weight: 750; }
+.skip-link:focus { top: .75rem; }
+:focus-visible { outline: 3px solid rgba(242, 184, 75, .95); outline-offset: 3px; }
 .shell { min-height: 100vh; }
 header {
   position: sticky;
@@ -58,6 +63,7 @@ header {
 .brand-home { display: flex; align-items: center; gap: .8rem; color: white; text-decoration: none; }
 .brand-home:hover .brand-mark { transform: rotate(-3deg) scale(1.04); }
 .brand-mark { display: grid; place-items: center; width: 2.75rem; height: 2.75rem; border-radius: .85rem; background: var(--accent); color: var(--brand-dark); font-weight: 850; letter-spacing: -.08em; box-shadow: 0 5px 14px rgba(0, 0, 0, .12); }
+.brand-copy { display: block; }
 .brand h1 { margin: 0; font-size: 1.55rem; letter-spacing: -.04em; }
 .brand p { margin: .2rem 0 0; color: #d2eee5; font-size: .88rem; }
 nav { display: flex; flex-wrap: wrap; gap: .4rem; margin-top: 1.1rem; padding-top: .8rem; border-top: 1px solid rgba(255,255,255,.18); }
@@ -92,6 +98,7 @@ label { display: block; margin-top: .8rem; font-weight: 650; font-size: .92rem; 
 input, select, textarea { width: 100%; padding: .68rem .72rem; margin-top: .3rem; border: 1px solid #bfd2ca; border-radius: .5rem; background: white; color: var(--ink); font: inherit; }
 input:focus, select:focus, textarea:focus { outline: 3px solid rgba(18, 107, 92, .18); border-color: var(--brand); }
 button, .button { display: inline-block; margin-top: 1rem; padding: .68rem .95rem; border: 0; border-radius: .5rem; background: var(--brand); color: white; cursor: pointer; font: inherit; font-weight: 650; text-decoration: none; }
+button, .button { min-height: 2.75rem; }
 button:hover, .button:hover { background: var(--brand-dark); }
 button:disabled { opacity: .55; cursor: not-allowed; }
 button.danger { background: var(--danger); }
@@ -102,6 +109,8 @@ button.danger:hover { background: #843128; }
 .filter { display: flex; flex-wrap: wrap; align-items: end; gap: .65rem; padding: .85rem; margin-bottom: 1rem; border-radius: .75rem; background: var(--surface-soft); border: 1px solid var(--line); }
 .filter label { flex: 1 1 220px; margin: 0; }
 .filter button { margin-top: 0; }
+.filter .button { margin-top: 0; }
+.filter .clear-filter { align-self: center; font-size: .9rem; white-space: nowrap; }
 .inventory-form { display: grid; gap: 1rem; }
 .inventory-toolbar { display: grid; grid-template-columns: minmax(180px, .7fr) minmax(220px, 1fr) minmax(220px, 1.2fr); gap: .8rem; align-items: end; }
 .inventory-toolbar label { margin: 0; }
@@ -125,6 +134,8 @@ button.danger:hover { background: #843128; }
 .delta-zero { color: var(--muted); }
 .inventory-footer { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
 .inventory-footer p { margin: 0; color: var(--muted); }
+.inventory-progress { color: var(--ink) !important; }
+.inventory-progress strong { color: var(--brand); }
 .inventory-footer button { margin-top: 0; }
 .inventory-empty { padding: 2rem; text-align: center; }
 .inventory-empty h3 { margin-top: 0; }
@@ -231,12 +242,13 @@ def _page(
   <style>{STYLE}</style>
 </head>
 <body>
+  <a class="skip-link" href="#main-content">Aller directement au contenu</a>
   <div class="shell">
     <header>
       <div class="brand">
         <a class="brand-home" href="/" aria-label="Accueil Cuisine 4H">
           <span class="brand-mark">4H</span>
-          <span><h1>Cuisine 4H</h1><p>Le stock clair, même après le service.</p></span>
+          <div class="brand-copy"><h1>Cuisine 4H</h1><p>Le stock clair, même après le service.</p></div>
         </a>
         <span aria-hidden="true">🥕</span>
       </div>
@@ -244,7 +256,7 @@ def _page(
         {"".join(nav_links)}
       </nav>
     </header>
-    <main>{flash}{content}</main>
+    <main id="main-content" tabindex="-1">{flash}{content}</main>
     <footer>Cuisine 4H · gestion des stocks de cuisine</footer>
   </div>
 </body>
@@ -260,6 +272,25 @@ def _heading(title: str, subtitle: str = "", actions: str = "") -> str:
         + (f'<div class="actions">{actions}</div>' if actions else "")
         + "</div>"
     )
+
+
+def _metric_card(value: object, label: str, href: Optional[str] = None) -> str:
+    """Construit un indicateur, éventuellement transformé en raccourci."""
+
+    card = (
+        '<div class="card">'
+        f'<strong>{_escape(value)}</strong><span>{_escape(label)}</span>'
+        '</div>'
+    )
+    if href is None:
+        return card
+    return f'<a class="card-link" href="{_escape(href)}">{card}</a>'
+
+
+def _search_href(path: str, value: object) -> str:
+    """Construit un lien de recherche sûr pour une liste web."""
+
+    return f'{path}?q={_escape(quote(str(value), safe=""))}'
 
 
 def _products_table(
@@ -690,7 +721,7 @@ def _inventory_table(repository: Repository) -> str:
             '</tr>'
         )
     return (
-        '<table class="inventory-table"><thead><tr>'
+        '<table id="inventory-table" class="inventory-table"><thead><tr>'
         '<th>Produit</th><th>Lot</th><th>Théorique</th><th>Compté</th>'
         '<th>Écart</th><th>Date limite</th></tr></thead>'
         f'<tbody>{"".join(rows)}</tbody></table>'
@@ -719,6 +750,8 @@ def inventory_page(repository: Repository) -> str:
         '<span>valeur théorique</span></div>'
         '</div>'
     )
+    if not snapshot.batches:
+        return content + _inventory_table(repository)
     content += (
         '<form class="inventory-form" method="post" action="/inventory" '
         'data-inventory-form>'
@@ -730,14 +763,19 @@ def inventory_page(repository: Repository) -> str:
         '<input name="reason" value="Inventaire complet" required>'
         '</label>'
         '<label>Rechercher '
-        '<input type="search" data-inventory-search placeholder="Produit, lot ou date limite">'
+        '<input type="search" data-inventory-search aria-controls="inventory-table" '
+        'placeholder="Produit, lot ou date limite">'
         '</label>'
         '<p class="inventory-help">Laissez vide les lots non comptés. '
         'Le stock théorique est affiché comme repère.</p>'
         '</section>'
         f'{_inventory_table(repository)}'
+        '<noscript><p class="notice">Le calcul instantané des écarts et la recherche '
+        'nécessitent JavaScript, mais la saisie et l’enregistrement restent disponibles.</p></noscript>'
         '<section class="panel inventory-footer">'
-        '<p>Les écarts seront enregistrés dans l’historique comme entrées ou pertes.</p>'
+        f'<p class="inventory-progress"><strong data-inventory-progress aria-live="polite">0 / '
+        f'{_escape(len(snapshot.batches))}</strong> lots renseignés. '
+        'Les écarts seront enregistrés dans l’historique comme entrées ou pertes.</p>'
         '<button type="submit" data-inventory-submit>Enregistrer le comptage</button>'
         '</section>'
         '</form>'
@@ -750,6 +788,7 @@ def inventory_page(repository: Repository) -> str:
         'const categoryRows = Array.from(form.querySelectorAll("[data-inventory-category]"))'
         '.filter((row) => row.classList.contains("inventory-category-row"));'
         'const submit = form.querySelector("[data-inventory-submit]");'
+        'const progress = form.querySelector("[data-inventory-progress]");'
         'const search = form.querySelector("[data-inventory-search]");'
         'const format = (value) => new Intl.NumberFormat("fr-FR", '
         '{ maximumFractionDigits: 3 }).format(value);'
@@ -789,8 +828,10 @@ def inventory_page(repository: Repository) -> str:
         '  });'
         '}'
         'function updateSubmit() {'
-        '  submit.disabled = !rows.some((row) => '
-        'row.querySelector(".inventory-count-input").value.trim());'
+        '  const counted = rows.filter((row) => '
+        'row.querySelector(".inventory-count-input").value.trim()).length;'
+        '  progress.textContent = counted + " / " + rows.length;'
+        '  submit.disabled = counted === 0;'
         '}'
         'rows.forEach((row) => row.querySelector(".inventory-count-input")'
         '.addEventListener("input", () => { updateRow(row); updateSubmit(); }));'
@@ -867,7 +908,8 @@ def _batch_alerts(items: List[AlertBatch], empty: str = "Aucun lot concerné.") 
     if not items:
         return f'<p class="ok">{_escape(empty)}</p>'
     return "<ul class=\"list\">" + "".join(
-        f"<li>Lot #{_escape(item.batch.id)} — <strong>{_escape(item.product.name)}</strong>, "
+        f"<li><a href=\"{_search_href('/batches', item.batch.id)}\">"
+        f"Lot #{_escape(item.batch.id)} — <strong>{_escape(item.product.name)}</strong></a>, "
         f"stock {_escape(format_quantity(item.batch.quantity))} {_escape(item.product.unit)}, "
         f"date limite {_escape(format_date(item.effective_expiry))}</li>"
         for item in items
@@ -887,12 +929,12 @@ def dashboard(repository: Repository) -> str:
     )
     content += (
         '<div class="cards">'
-        f'<div class="card"><strong>{_escape(len(snapshot.products))}</strong><span>produits suivis</span></div>'
-        f'<div class="card"><strong>{_escape(snapshot.active_batches)}</strong><span>lots en stock</span></div>'
-        f'<div class="card"><strong>{_escape(format_price(snapshot.total_value_cents))}</strong><span>valeur du stock</span></div>'
-        f'<div class="card"><strong>{_escape(snapshot.below_minimum)}</strong><span>sous le seuil</span></div>'
-        f'<div class="card"><strong>{_escape(snapshot.expired)}</strong><span>lots périmés</span></div>'
-        '</div>'
+        + _metric_card(len(snapshot.products), "produits suivis", "/products")
+        + _metric_card(snapshot.active_batches, "lots en stock", "/batches")
+        + _metric_card(format_price(snapshot.total_value_cents), "valeur du stock")
+        + _metric_card(snapshot.below_minimum, "sous le seuil", "/alerts")
+        + _metric_card(snapshot.expired, "lots périmés", "/alerts")
+        + '</div>'
     )
     content += (
         '<section class="section panel">'
@@ -910,16 +952,19 @@ def dashboard(repository: Repository) -> str:
     content += _movements_table(repository, movements=snapshot.latest_movements) + '</section>'
     active_batches = repository.list_batches_in_stock()
     if active_batches:
+        products = {product.id: product for product in repository.list_products()}
         rows = "".join(
             "<tr>"
             f"<td>#{_escape(batch.id)}</td>"
-            f"<td>{_escape(format_quantity(batch.quantity))}</td>"
+            f"<td><a href=\"{_search_href('/batches', products.get(batch.product_id).name if products.get(batch.product_id) else batch.product_id)}\">"
+            f"{_escape(products.get(batch.product_id).name if products.get(batch.product_id) else '?')}</a></td>"
+            f"<td class=\"number\">{_escape(format_quantity(batch.quantity))}</td>"
             f"<td>{_escape(format_date(batch.opened_date))}</td>"
             "</tr>"
             for batch in active_batches[:8]
         )
         content += '<section class="section"><div class="section-heading"><h3>Lots actifs</h3><a href="/batches">Voir tous les lots →</a></div>'
-        content += f'<table><thead><tr><th>Lot</th><th>Stock</th><th>Ouvert le</th></tr></thead><tbody>{rows}</tbody></table></section>'
+        content += f'<table><thead><tr><th>Lot</th><th>Produit</th><th>Stock</th><th>Ouvert le</th></tr></thead><tbody>{rows}</tbody></table></section>'
     content += '<section class="section columns">'
     content += f'<div class="panel"><h3>Nouveau produit</h3>{_product_form(repository)}</div>'
     content += f'<div class="panel"><h3>Enregistrer un mouvement</h3>{_movement_form(repository)}</div>'
@@ -929,7 +974,17 @@ def dashboard(repository: Repository) -> str:
 
 def products_page(repository: Repository, search: str = "") -> str:
     lines = StockApplication(repository).product_stock(search)
-    form = f'<form class="filter" method="get" action="/products"><label>Rechercher <input name="q" value="{_escape(search)}" placeholder="Nom ou catégorie"></label><button type="submit">Filtrer</button></form>'
+    clear = (
+        '<a class="clear-filter" href="/products">Effacer la recherche</a>'
+        if search
+        else ""
+    )
+    form = (
+        '<form class="filter" method="get" action="/products">'
+        f'<label>Rechercher <input name="q" type="search" value="{_escape(search)}" '
+        'placeholder="Nom ou catégorie" autocomplete="off"></label>'
+        f'<button type="submit">Rechercher</button>{clear}</form>'
+    )
     content = _heading("Produits", "Les seuils permettent d’anticiper les achats.", '<a class="button ghost" href="/export/products.csv">Exporter CSV</a>')
     content += '<section class="columns"><div class="panel"><h3>Nouveau produit</h3>' + _product_form(repository) + '</div><div>' + form + _products_table(lines, repository=repository) + '</div></section>'
     return content
@@ -974,19 +1029,35 @@ def categories_page(repository: Repository) -> str:
 
 def batches_page(repository: Repository, search: str = "") -> str:
     content = _heading("Lots", "Suivez les dates limites et l’ouverture des produits.", '<a class="button ghost" href="/export/batches.csv">Exporter CSV</a>')
-    filter_form = f'<form class="filter" method="get" action="/batches"><label>Rechercher <input name="q" value="{_escape(search)}" placeholder="Numéro ou produit"></label><button type="submit">Filtrer</button></form>'
+    clear = (
+        '<a class="clear-filter" href="/batches">Effacer la recherche</a>'
+        if search
+        else ""
+    )
+    filter_form = (
+        '<form class="filter" method="get" action="/batches">'
+        f'<label>Rechercher <input name="q" type="search" value="{_escape(search)}" '
+        'placeholder="Numéro ou produit" autocomplete="off"></label>'
+        f'<button type="submit">Rechercher</button>{clear}</form>'
+    )
     products = repository.list_products()
     content += '<section class="columns"><div class="panel"><h3>Nouveau lot</h3>' + _batch_form(products) + '</div><div>' + filter_form + _batch_rows(repository, search, products) + '</div></section>'
     return content
 
 
 def movements_page(repository: Repository, batch_id: Optional[int], limit: int) -> str:
+    products = {product.id: product for product in repository.list_products()}
     options = ['<option value="">Tous les lots</option>']
     for batch in repository.list_batches():
         selected = " selected" if batch.id == batch_id else ""
-        options.append(f'<option value="{_escape(batch.id)}"{selected}>Lot #{_escape(batch.id)}</option>')
+        product_name = products.get(batch.product_id)
+        label = "?" if product_name is None else product_name.name
+        options.append(
+            f'<option value="{_escape(batch.id)}"{selected}>'
+            f'Lot #{_escape(batch.id)} — {_escape(label)}</option>'
+        )
     content = _heading("Historique des mouvements", "Chaque entrée, sortie et perte est conservée.", '<a class="button ghost" href="/export/movements.csv">Exporter CSV</a>')
-    content += f'<form class="filter" method="get" action="/movements"><label>Lot <select name="batch_id">{"".join(options)}</select></label><label>Nombre de lignes <input name="limit" type="number" min="1" value="{_escape(limit)}"></label><button type="submit">Filtrer</button></form>'
+    content += f'<form class="filter" method="get" action="/movements"><label>Lot <select name="batch_id">{"".join(options)}</select></label><label>Nombre de lignes <input name="limit" type="number" min="1" max="1000" value="{_escape(limit)}"></label><button type="submit">Rechercher</button></form>'
     content += _movements_table(repository, batch_id=batch_id, limit=limit)
     return content
 
@@ -995,12 +1066,22 @@ def alerts_page(repository: Repository, days: int = 7, reference_date: Optional[
     report = StockApplication(repository).alerts(days=days, reference_date=reference_date)
     below = (
         '<ul class="list">' + "".join(
-            f'<li>#{_escape(product.id)} <strong>{_escape(product.name)}</strong></li>'
+            f'<li><a href="{_search_href("/products", product.name)}">'
+            f'#{_escape(product.id)} <strong>{_escape(product.name)}</strong></a></li>'
             for product in report.below_minimum
         ) + '</ul>'
         if report.below_minimum else '<p class="ok">Aucun produit sous le seuil.</p>'
     )
+    date_value = "" if reference_date is None else reference_date.isoformat()
     content = _heading("Alertes", f"Référence : {report.reference_date.isoformat()} · fenêtre de {report.days} jours.")
+    content += (
+        '<form class="filter" method="get" action="/alerts">'
+        f'<label>Fenêtre d’alerte (jours) <input name="days" type="number" min="0" max="3650" value="{_escape(report.days)}"></label>'
+        f'<label>Date de référence <input name="date" type="date" value="{_escape(date_value)}"></label>'
+        '<button type="submit">Actualiser</button>'
+        '<a class="clear-filter" href="/alerts">Réinitialiser</a>'
+        '</form>'
+    )
     content += '<div class="columns three">'
     content += f'<section class="panel"><h3>Sous le seuil</h3>{below}</section>'
     content += f'<section class="panel"><h3>Lots périmés</h3>{_batch_alerts(list(report.expired))}</section>'

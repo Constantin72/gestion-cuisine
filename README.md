@@ -8,28 +8,74 @@ maintenance. SQLite conserve les données sur la machine qui exécute l'applicat
 Python 3.9 ou supérieur est requis. L'application utilise uniquement la bibliothèque
 standard ; l'installation du paquet utilise setuptools.
 
+## Repères rapides
+
+| Besoin | Où agir | Référence |
+| --- | --- | --- |
+| Tester ou utiliser l'application localement | Terminal de l'ordinateur | [Démarrer localement](#démarrer-sur-son-ordinateur) |
+| Publier une modification de code | Terminal de l'ordinateur puis GitHub | [Publier une modification](#publier-une-modification) |
+| Mettre à jour le site partagé | Terminal SSH Alwaysdata puis panneau web | [DEPLOYMENT.md](DEPLOYMENT.md) |
+| Sauvegarder ou restaurer les données | Terminal de la machine qui héberge SQLite | [Sauvegarder et restaurer](#sauvegarder-et-restaurer) |
+
+Les commandes ci-dessous sont à lancer depuis la racine du projet, sauf mention
+contraire. Les commandes locales utilisent `python3` et `.venv/bin/python` ;
+Alwaysdata utilise `python` dans la configuration de son site.
+
 ## Démarrer sur son ordinateur
+
+### Première installation
+
+Dans un terminal :
+
+```bash
+cd /chemin/vers/gestion-cuisine
+python3 -m venv .venv
+./.venv/bin/python -m pip install -e .
+```
+
+Puis démarrer l'interface :
+
+```bash
+./.venv/bin/python -m stock_cuisine \
+  --database donnees/stock.db web
+```
+
+Ouvrir <http://127.0.0.1:8000/>. La commande doit rester active ; `Ctrl+C` arrête
+le serveur.
+
+### Démarrages suivants
+
+```bash
+cd /chemin/vers/gestion-cuisine
+./.venv/bin/python -m stock_cuisine \
+  --database donnees/stock.db web
+```
+
+Sans installation du paquet, le lancement équivalent est :
+
+```bash
+PYTHONPATH=src python3 -m stock_cuisine \
+  --database donnees/stock.db web
+```
+
+Le dossier et la base sont créés au premier démarrage s'ils n'existent pas.
+Conserver les bases de travail hors de Git. `stock.db` et `donnees/stock.db`
+sont deux fichiers distincts : choisir un chemin et le conserver.
+Les chemins relatifs partent du dossier courant. L'option `--database` se place
+avant la sous-commande ; sans elle, le programme utilise `stock.db`.
+
+### Vérifier l'installation
 
 Depuis la racine du projet :
 
 ```bash
-python3 -m venv .venv
-./.venv/bin/python -m pip install -e .
-./.venv/bin/python -m stock_cuisine --database donnees/stock.db web
+PYTHONPATH=src python3 -m unittest discover -s tests -v
+git diff --check
 ```
 
-Ouvrir <http://127.0.0.1:8000/>. La commande doit rester active ; `Ctrl+C` arrête
-le serveur. Sans installation du paquet :
-
-```bash
-PYTHONPATH=src python3 -m stock_cuisine --database donnees/stock.db web
-```
-
-Le dossier et la base sont créés au premier démarrage s'ils n'existent pas.
-Conserver les bases de travail hors de Git. Toujours garder le même chemin : `stock.db` et
-`donnees/stock.db` sont deux fichiers distincts. Les chemins relatifs partent du
-dossier courant. L'option `--database` se place avant la sous-commande ; sans elle,
-le programme utilise `stock.db`.
+Le serveur local doit ensuite permettre de créer un produit, un lot, un
+mouvement et un inventaire global depuis **Inventaire**. Pour arrêter le
+serveur, utiliser `Ctrl+C` dans le terminal qui l'exécute.
 
 Pour une instance partagée hébergée, suivre [DEPLOYMENT.md](DEPLOYMENT.md).
 Les collaborateurs utilisent leur navigateur sans compte GitHub. GitHub distribue
@@ -69,7 +115,8 @@ il n'y a pas encore de rôles ni d'attribution des mouvements à une personne.
 ## Commandes utiles
 
 Tous les exemples utilisent `donnees/stock.db` depuis la racine du projet.
-Après installation, `stock-cuisine` peut remplacer `python -m stock_cuisine`.
+Après installation, `./.venv/bin/stock-cuisine` peut remplacer
+`./.venv/bin/python -m stock_cuisine`.
 
 ```bash
 ./.venv/bin/python -m stock_cuisine --database donnees/stock.db product add \
@@ -148,3 +195,57 @@ et documentation en français. Les règles communes se placent dans les services
 ou le repository, et non dans les formulaires.
 
 Voir [ROADMAP.md](ROADMAP.md) pour les évolutions restantes.
+
+## Publier une modification
+
+Cette procédure se fait sur l'ordinateur de développement, pas dans le terminal
+SSH du serveur :
+
+```bash
+cd /chemin/vers/gestion-cuisine
+git status
+PYTHONPATH=src python3 -m unittest discover -s tests -v
+git diff --check
+git add -A
+git diff --cached --check
+git status --short
+git commit -m "Décrire la modification"
+git push origin main
+```
+
+Avant `git commit`, vérifier que la liste des fichiers ne contient ni base
+SQLite, ni `.env`, ni secret. Si `git push` signale un problème d'identification,
+configurer l'accès GitHub sur l'ordinateur ; ne jamais inscrire un jeton dans un
+fichier du projet.
+
+Après le `git push`, la mise à jour d'Alwaysdata se fait séparément avec la
+sauvegarde préalable et `git pull --ff-only` décrits dans [DEPLOYMENT.md](DEPLOYMENT.md).
+
+## Sauvegarder et restaurer
+
+Créer une sauvegarde cohérente avec l'application, même si le serveur utilise
+SQLite en mode WAL :
+
+```bash
+./.venv/bin/python -m stock_cuisine \
+  --database donnees/stock.db backup \
+  --output sauvegardes/stock-2026-10-06.db
+```
+
+Vérifier qu'elle existe et la conserver hors de la machine qui héberge le stock.
+Pour contrôler une copie avant restauration, le résultat attendu est `ok` :
+
+```bash
+./.venv/bin/python -c 'import sqlite3; print(sqlite3.connect("sauvegardes/stock-2026-10-06.db").execute("PRAGMA integrity_check").fetchone()[0])'
+```
+
+Ne pas remplacer une base active sans :
+
+1. arrêter le site ;
+2. sauvegarder l'état actuel ;
+3. vérifier la copie avec `PRAGMA integrity_check` ;
+4. rétablir les droits d'écriture du dossier et de la base ;
+5. redémarrer puis contrôler le stock et l'historique.
+
+La sauvegarde n'est pas automatique. La fréquence doit correspondre à la perte
+de données que l'association pourrait accepter.
